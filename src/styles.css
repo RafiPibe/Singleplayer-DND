@@ -799,31 +799,6 @@ textarea:focus {
   font-size: 0.8rem;
 }
 
-.stat-roll {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
-}
-
-.stat-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.stat-value {
-  min-width: 34px;
-  text-align: right;
-}
-
-.stat-roll-btn {
-  padding: 4px 10px;
-  font-size: 0.72rem;
-  min-width: 56px;
-}
-
 .custom-stat-grid {
   grid-template-columns: repeat(2, minmax(240px, 1fr));
 }
@@ -864,6 +839,19 @@ textarea:focus {
   padding: 16px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.detail-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.detail-card .btn.ghost {
+  padding: 4px 10px;
+  font-size: 0.75rem;
 }
 
 .dice-panel {

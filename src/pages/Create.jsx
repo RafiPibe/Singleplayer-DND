@@ -5,12 +5,16 @@ import {
   CUSTOM_CLASS,
   REPUTATION,
   STATS,
+  HP_RANGE,
   buildStats,
-  defaultReputation,
 } from '../data/classes.js';
 import { supabase } from '../lib/supabase.js';
 
 const TOTAL_STEPS = 4;
+const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
+const rollWithOpposedDice = (sides) => rollDie(sides) - rollDie(sides);
+const rollInRange = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
+const rollHpValue = () => rollInRange(HP_RANGE.min, HP_RANGE.max);
 
 export default function Create() {
   const navigate = useNavigate();
@@ -30,6 +34,7 @@ export default function Create() {
     });
     return base;
   });
+  const [classStats, setClassStats] = useState(() => ({}));
   const [customReputation, setCustomReputation] = useState(() => {
     const base = {};
     REPUTATION.forEach((rep) => {
@@ -37,6 +42,8 @@ export default function Create() {
     });
     return base;
   });
+  const [classReputation, setClassReputation] = useState(() => ({}));
+  const [rolledHp, setRolledHp] = useState(() => rollHpValue());
   const [backstory, setBackstory] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -49,36 +56,47 @@ export default function Create() {
     return `${nickname} (${role})`;
   };
 
-  const rollStatValue = () => Math.floor(Math.random() * 11) - 5;
-  const rollRepValue = () => Math.floor(Math.random() * 41) - 20;
+  const rollStatValue = () => rollWithOpposedDice(6);
+  const rollRepValue = () => rollWithOpposedDice(20);
+  const rerollHp = () => setRolledHp(rollHpValue());
 
-  const rollAllStats = () => {
+  const rollStatsSet = () => {
     const rolled = {};
     STATS.forEach((stat) => {
       rolled[stat] = rollStatValue();
     });
-    setCustomStats(rolled);
+    return rolled;
   };
 
-  const rollSingleStat = (stat) => {
-    setCustomStats((prev) => ({
-      ...prev,
-      [stat]: rollStatValue(),
-    }));
-  };
-
-  const rollAllReputation = () => {
+  const rollReputationSet = () => {
     const rolled = {};
     REPUTATION.forEach((rep) => {
       rolled[rep] = rollRepValue();
     });
-    setCustomReputation(rolled);
+    return rolled;
   };
 
-  const rollSingleReputation = (rep) => {
-    setCustomReputation((prev) => ({
+  const rollAllStats = () => {
+    setCustomStats(rollStatsSet());
+  };
+
+  const rollAllReputation = () => {
+    setCustomReputation(rollReputationSet());
+  };
+
+  const rollClassReputation = () => {
+    if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
+    setClassReputation((prev) => ({
       ...prev,
-      [rep]: rollRepValue(),
+      [selectedClass]: rollReputationSet(),
+    }));
+  };
+
+  const rollClassStats = () => {
+    if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
+    setClassStats((prev) => ({
+      ...prev,
+      [selectedClass]: rollStatsSet(),
     }));
   };
 
@@ -100,6 +118,11 @@ export default function Create() {
     });
   }, [selectedClass]);
 
+  useEffect(() => {
+    if (!selectedClass) return;
+    setRolledHp(rollHpValue());
+  }, [selectedClass]);
+
   const currentClassDetails = useMemo(() => {
     if (selectedClass === CUSTOM_CLASS.name) {
       const nickname = customNickname.trim() || CUSTOM_CLASS.nickname;
@@ -111,7 +134,7 @@ export default function Create() {
         role,
         displayName: `${nickname} (${role})`,
         description,
-        hp: CUSTOM_CLASS.hp,
+        hp: rolledHp,
         stats: customStats,
         reputation: customReputation,
       };
@@ -120,15 +143,20 @@ export default function Create() {
     const selected = CLASSES.find((cls) => cls.name === selectedClass);
     if (!selected) return null;
 
+    const reputation = classReputation[selected.name] ?? selected.reputation;
+
+    const baseStats = buildStats(selected.strengths, selected.secondary, selected.weaknesses);
+    const stats = classStats[selected.name] ?? baseStats;
+
     return {
       name: selected.name,
       nickname: selected.nickname ?? selected.name,
       role: selected.role ?? 'Class',
       displayName: getDisplayName(selected),
       description: selected.description,
-      hp: selected.hp,
-      stats: buildStats(selected.strengths, selected.secondary, selected.weaknesses),
-      reputation: selected.reputation,
+      hp: rolledHp,
+      stats,
+      reputation,
     };
   }, [
     selectedClass,
@@ -137,6 +165,9 @@ export default function Create() {
     customDescription,
     customStats,
     customReputation,
+    rolledHp,
+    classReputation,
+    classStats,
   ]);
 
   const validateStep = () => {
@@ -355,7 +386,6 @@ export default function Create() {
                           <div className="class-title">{cls.nickname ?? cls.name}</div>
                           <div className="class-pill-group">
                             <span className="class-pill role-pill">{cls.role ?? 'Class'}</span>
-                            <span className="class-pill">HP {cls.hp ?? '--'}</span>
                           </div>
                         </div>
                         <p>{cls.description}</p>
@@ -403,7 +433,12 @@ export default function Create() {
                               />
                             </label>
                             <div className="detail-card">
-                              <strong>Starting HP</strong>
+                              <div className="detail-card-header">
+                                <strong>Starting HP</strong>
+                                <button type="button" className="btn ghost" onClick={rerollHp}>
+                                  Reroll
+                                </button>
+                              </div>
                               <p>{currentClassDetails.hp}</p>
                             </div>
                             <div className="custom-stats-header">
@@ -414,18 +449,9 @@ export default function Create() {
                             </div>
                             <div className="stat-grid custom-stat-grid">
                               {STATS.map((stat) => (
-                                <div className="stat stat-roll" key={stat}>
+                                <div className="stat" key={stat}>
                                   <span>{stat}</span>
-                                  <div className="stat-actions">
-                                    <span className="stat-value">{customStats[stat]}</span>
-                                    <button
-                                      type="button"
-                                      className="btn ghost stat-roll-btn"
-                                      onClick={() => rollSingleStat(stat)}
-                                    >
-                                      Roll
-                                    </button>
-                                  </div>
+                                  <span>{customStats[stat]}</span>
                                 </div>
                               ))}
                             </div>
@@ -437,18 +463,9 @@ export default function Create() {
                             </div>
                             <div className="stat-grid custom-stat-grid">
                               {REPUTATION.map((rep) => (
-                                <div className="stat stat-roll" key={rep}>
+                                <div className="stat" key={rep}>
                                   <span>{rep}</span>
-                                  <div className="stat-actions">
-                                    <span className="stat-value">{customReputation[rep]}</span>
-                                    <button
-                                      type="button"
-                                      className="btn ghost stat-roll-btn"
-                                      onClick={() => rollSingleReputation(rep)}
-                                    >
-                                      Roll
-                                    </button>
-                                  </div>
+                                  <span>{customReputation[rep]}</span>
                                 </div>
                               ))}
                             </div>
@@ -463,10 +480,20 @@ export default function Create() {
                             </div>
                             <p className="subtle">{currentClassDetails.description}</p>
                             <div className="detail-card">
-                              <strong>Starting HP</strong>
+                              <div className="detail-card-header">
+                                <strong>Starting HP</strong>
+                                <button type="button" className="btn ghost" onClick={rerollHp}>
+                                  Reroll
+                                </button>
+                              </div>
                               <p>{currentClassDetails.hp}</p>
                             </div>
-                            <h4>Starting Stats</h4>
+                            <div className="custom-stats-header">
+                              <h4>Starting Stats</h4>
+                              <button type="button" className="btn ghost" onClick={rollClassStats}>
+                                Roll all
+                              </button>
+                            </div>
                             <div className="stat-grid">
                               {STATS.map((stat) => (
                                 <div className="stat" key={stat}>
@@ -475,7 +502,16 @@ export default function Create() {
                                 </div>
                               ))}
                             </div>
-                            <h4>Starting Reputation</h4>
+                            <div className="custom-stats-header">
+                              <h4>Starting Reputation</h4>
+                              <button
+                                type="button"
+                                className="btn ghost"
+                                onClick={rollClassReputation}
+                              >
+                                Roll all
+                              </button>
+                            </div>
                             <div className="stat-grid">
                               {REPUTATION.map((rep) => (
                                 <div className="stat" key={rep}>

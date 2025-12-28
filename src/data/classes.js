@@ -28,6 +28,8 @@ export const STATS = [
 
 export const REPUTATION = ['Honor', 'Bravery', 'Justice', 'Mercy', 'Loyalty', 'Generosity'];
 
+export const HP_RANGE = { min: 10, max: 20 };
+
 const BASE_STAT = 0;
 const CLASS_STATS = 5;
 const SECONDARY_STATS = 3;
