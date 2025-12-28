@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { getValueStyle } from '../lib/valueStyle.js';
 
 const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
 
@@ -315,7 +316,7 @@ export default function Campaign() {
               {statEntries.map(([stat, value]) => (
                 <div className="stat" key={stat}>
                   <span>{stat}</span>
-                  <span>{value}</span>
+                  <span style={getValueStyle(value, 5)}>{value}</span>
                 </div>
               ))}
             </div>
@@ -324,7 +325,7 @@ export default function Campaign() {
               {repEntries.map(([rep, value]) => (
                 <div className="stat" key={rep}>
                   <span>{rep}</span>
-                  <span>{value}</span>
+                  <span style={getValueStyle(value, 20)}>{value}</span>
                 </div>
               ))}
             </div>

@@ -9,6 +9,7 @@ import {
   buildStats,
 } from '../data/classes.js';
 import { supabase } from '../lib/supabase.js';
+import { getValueStyle } from '../lib/valueStyle.js';
 
 const TOTAL_STEPS = 4;
 const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
@@ -451,7 +452,9 @@ export default function Create() {
                               {STATS.map((stat) => (
                                 <div className="stat" key={stat}>
                                   <span>{stat}</span>
-                                  <span>{customStats[stat]}</span>
+                                  <span style={getValueStyle(customStats[stat], 5)}>
+                                    {customStats[stat]}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -465,7 +468,9 @@ export default function Create() {
                               {REPUTATION.map((rep) => (
                                 <div className="stat" key={rep}>
                                   <span>{rep}</span>
-                                  <span>{customReputation[rep]}</span>
+                                  <span style={getValueStyle(customReputation[rep], 20)}>
+                                    {customReputation[rep]}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -498,7 +503,9 @@ export default function Create() {
                               {STATS.map((stat) => (
                                 <div className="stat" key={stat}>
                                   <span>{stat}</span>
-                                  <span>{currentClassDetails.stats[stat]}</span>
+                                  <span style={getValueStyle(currentClassDetails.stats[stat], 5)}>
+                                    {currentClassDetails.stats[stat]}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -516,7 +523,9 @@ export default function Create() {
                               {REPUTATION.map((rep) => (
                                 <div className="stat" key={rep}>
                                   <span>{rep}</span>
-                                  <span>{currentClassDetails.reputation[rep]}</span>
+                                  <span style={getValueStyle(currentClassDetails.reputation[rep], 20)}>
+                                    {currentClassDetails.reputation[rep]}
+                                  </span>
                                 </div>
                               ))}
                             </div>
@@ -541,7 +550,6 @@ export default function Create() {
                   rows={5}
                   value={backstory}
                   onChange={(event) => setBackstory(event.target.value)}
-                  maxLength={500}
                   required
                 />
               </label>
