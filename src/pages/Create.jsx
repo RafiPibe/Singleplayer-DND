@@ -6,7 +6,6 @@ import {
   REPUTATION,
   STATS,
   buildStats,
-  classStatsFromDescription,
   defaultReputation,
 } from '../data/classes.js';
 import { supabase } from '../lib/supabase.js';
@@ -21,38 +20,100 @@ export default function Create() {
   const [gender, setGender] = useState('Male');
   const [genderCustom, setGenderCustom] = useState('');
   const [selectedClass, setSelectedClass] = useState('');
-  const [customClassText, setCustomClassText] = useState('');
+  const [customNickname, setCustomNickname] = useState('');
+  const [customClassName, setCustomClassName] = useState('');
+  const [customDescription, setCustomDescription] = useState('');
+  const [customStats, setCustomStats] = useState(() => {
+    const base = {};
+    STATS.forEach((stat) => {
+      base[stat] = 0;
+    });
+    return base;
+  });
+  const [customReputation, setCustomReputation] = useState(() => {
+    const base = {};
+    REPUTATION.forEach((rep) => {
+      base[rep] = 0;
+    });
+    return base;
+  });
   const [backstory, setBackstory] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
 
   const classOptions = useMemo(() => [...CLASSES, CUSTOM_CLASS], []);
 
+  const getDisplayName = (cls) => {
+    const nickname = cls.nickname ?? cls.name;
+    const role = cls.role ?? 'Class';
+    return `${nickname} (${role})`;
+  };
+
+  const rollStatValue = () => Math.floor(Math.random() * 11) - 5;
+  const rollRepValue = () => Math.floor(Math.random() * 41) - 20;
+
+  const rollAllStats = () => {
+    const rolled = {};
+    STATS.forEach((stat) => {
+      rolled[stat] = rollStatValue();
+    });
+    setCustomStats(rolled);
+  };
+
+  const rollSingleStat = (stat) => {
+    setCustomStats((prev) => ({
+      ...prev,
+      [stat]: rollStatValue(),
+    }));
+  };
+
+  const rollAllReputation = () => {
+    const rolled = {};
+    REPUTATION.forEach((rep) => {
+      rolled[rep] = rollRepValue();
+    });
+    setCustomReputation(rolled);
+  };
+
+  const rollSingleReputation = (rep) => {
+    setCustomReputation((prev) => ({
+      ...prev,
+      [rep]: rollRepValue(),
+    }));
+  };
+
   useEffect(() => {
-    if (selectedClass === CUSTOM_CLASS.name && customClassText.trim().length > 10) {
+    if (selectedClass === CUSTOM_CLASS.name) {
       setError('');
     }
-  }, [selectedClass, customClassText]);
+  }, [selectedClass, customNickname, customClassName, customDescription]);
+
+  useEffect(() => {
+    if (selectedClass !== CUSTOM_CLASS.name) return;
+    setCustomStats((prev) => {
+      if (prev) return prev;
+      const base = {};
+      STATS.forEach((stat) => {
+        base[stat] = 0;
+      });
+      return base;
+    });
+  }, [selectedClass]);
 
   const currentClassDetails = useMemo(() => {
     if (selectedClass === CUSTOM_CLASS.name) {
-      const text = customClassText.trim();
-      if (text.length >= 10) {
-        const generated = classStatsFromDescription(text);
-        return {
-          name: CUSTOM_CLASS.name,
-          description: text,
-          hp: generated.hp,
-          stats: generated.stats,
-          reputation: generated.reputation,
-        };
-      }
+      const nickname = customNickname.trim() || CUSTOM_CLASS.nickname;
+      const role = customClassName.trim() || CUSTOM_CLASS.role;
+      const description = customDescription.trim() || CUSTOM_CLASS.description;
       return {
         name: CUSTOM_CLASS.name,
-        description: 'Describe your class to generate stats.',
+        nickname,
+        role,
+        displayName: `${nickname} (${role})`,
+        description,
         hp: CUSTOM_CLASS.hp,
-        stats: buildStats(),
-        reputation: defaultReputation(),
+        stats: customStats,
+        reputation: customReputation,
       };
     }
 
@@ -61,12 +122,22 @@ export default function Create() {
 
     return {
       name: selected.name,
+      nickname: selected.nickname ?? selected.name,
+      role: selected.role ?? 'Class',
+      displayName: getDisplayName(selected),
       description: selected.description,
       hp: selected.hp,
       stats: buildStats(selected.strengths, selected.secondary, selected.weaknesses),
       reputation: selected.reputation,
     };
-  }, [selectedClass, customClassText]);
+  }, [
+    selectedClass,
+    customNickname,
+    customClassName,
+    customDescription,
+    customStats,
+    customReputation,
+  ]);
 
   const validateStep = () => {
     if (step === 1 && name.trim().length < 2) {
@@ -84,8 +155,13 @@ export default function Create() {
       if (!selectedClass) {
         return 'Choose a class to continue.';
       }
-      if (selectedClass === CUSTOM_CLASS.name && customClassText.trim().length < 10) {
-        return 'Describe your custom class (at least 10 characters).';
+      if (selectedClass === CUSTOM_CLASS.name) {
+        if (customNickname.trim().length < 2 || customClassName.trim().length < 2) {
+          return 'Add a nickname and class name for your custom class.';
+        }
+        if (customDescription.trim().length < 10) {
+          return 'Describe your custom class (at least 10 characters).';
+        }
       }
     }
     if (step === 4 && backstory.trim().length < 20) {
@@ -103,7 +179,13 @@ export default function Create() {
     }
     if (stepNumber === 3) {
       if (!selectedClass) return false;
-      if (selectedClass === CUSTOM_CLASS.name) return customClassText.trim().length >= 10;
+      if (selectedClass === CUSTOM_CLASS.name) {
+        return (
+          customNickname.trim().length >= 2 &&
+          customClassName.trim().length >= 2 &&
+          customDescription.trim().length >= 10
+        );
+      }
       return true;
     }
     if (stepNumber === 4) return backstory.trim().length >= 20;
@@ -156,7 +238,7 @@ export default function Create() {
       name: name.trim(),
       look: look.trim(),
       gender: genderValue,
-      class_name: currentClassDetails.name,
+      class_name: currentClassDetails.displayName ?? currentClassDetails.name,
       class_description: currentClassDetails.description,
       stats: currentClassDetails.stats,
       reputation: currentClassDetails.reputation,
@@ -270,11 +352,11 @@ export default function Create() {
                         onClick={() => setSelectedClass(cls.name)}
                       >
                         <div className="class-card-header">
-                          <div>
-                            <div className="class-title">{cls.nickname ?? cls.name}</div>
-                            <div className="class-role">{cls.role ?? 'Class'}</div>
+                          <div className="class-title">{cls.nickname ?? cls.name}</div>
+                          <div className="class-pill-group">
+                            <span className="class-pill role-pill">{cls.role ?? 'Class'}</span>
+                            <span className="class-pill">HP {cls.hp ?? '--'}</span>
                           </div>
-                          <span className="class-pill">HP {cls.hp ?? '--'}</span>
                         </div>
                         <p>{cls.description}</p>
                       </button>
@@ -283,30 +365,127 @@ export default function Create() {
                   <div className="class-details">
                     {currentClassDetails ? (
                       <>
-                        <h3>{currentClassDetails.name}</h3>
-                        <p className="subtle">{currentClassDetails.description}</p>
-                        <div className="detail-card">
-                          <strong>Starting HP</strong>
-                          <p>{currentClassDetails.hp}</p>
-                        </div>
-                        <h4>Starting Stats</h4>
-                        <div className="stat-grid">
-                          {STATS.map((stat) => (
-                            <div className="stat" key={stat}>
-                              <span>{stat}</span>
-                              <span>{currentClassDetails.stats[stat]}</span>
+                        {selectedClass === CUSTOM_CLASS.name ? (
+                          <div className="custom-class-form">
+                            <div className="class-details-header">
+                              <h3>{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
+                              <span className="class-pill role-pill">
+                                {currentClassDetails.role ?? 'Class'}
+                              </span>
                             </div>
-                          ))}
-                        </div>
-                        <h4>Starting Reputation</h4>
-                        <div className="stat-grid">
-                          {REPUTATION.map((rep) => (
-                            <div className="stat" key={rep}>
-                              <span>{rep}</span>
-                              <span>{currentClassDetails.reputation[rep]}</span>
+                            <label className="field">
+                              <span>Nickname</span>
+                              <input
+                                type="text"
+                                value={customNickname}
+                                onChange={(event) => setCustomNickname(event.target.value)}
+                                maxLength={32}
+                                placeholder="e.g., Silver Tongue"
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Class name</span>
+                              <input
+                                type="text"
+                                value={customClassName}
+                                onChange={(event) => setCustomClassName(event.target.value)}
+                                maxLength={32}
+                                placeholder="e.g., Bard"
+                              />
+                            </label>
+                            <label className="field">
+                              <span>Description</span>
+                              <textarea
+                                rows={3}
+                                value={customDescription}
+                                onChange={(event) => setCustomDescription(event.target.value)}
+                                maxLength={200}
+                              />
+                            </label>
+                            <div className="detail-card">
+                              <strong>Starting HP</strong>
+                              <p>{currentClassDetails.hp}</p>
                             </div>
-                          ))}
-                        </div>
+                            <div className="custom-stats-header">
+                              <h4>Starting Stats</h4>
+                              <button type="button" className="btn ghost" onClick={rollAllStats}>
+                                Roll all
+                              </button>
+                            </div>
+                            <div className="stat-grid custom-stat-grid">
+                              {STATS.map((stat) => (
+                                <div className="stat stat-roll" key={stat}>
+                                  <span>{stat}</span>
+                                  <div className="stat-actions">
+                                    <span className="stat-value">{customStats[stat]}</span>
+                                    <button
+                                      type="button"
+                                      className="btn ghost stat-roll-btn"
+                                      onClick={() => rollSingleStat(stat)}
+                                    >
+                                      Roll
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="custom-stats-header">
+                              <h4>Starting Reputation</h4>
+                              <button type="button" className="btn ghost" onClick={rollAllReputation}>
+                                Roll all
+                              </button>
+                            </div>
+                            <div className="stat-grid custom-stat-grid">
+                              {REPUTATION.map((rep) => (
+                                <div className="stat stat-roll" key={rep}>
+                                  <span>{rep}</span>
+                                  <div className="stat-actions">
+                                    <span className="stat-value">{customReputation[rep]}</span>
+                                    <button
+                                      type="button"
+                                      className="btn ghost stat-roll-btn"
+                                      onClick={() => rollSingleReputation(rep)}
+                                    >
+                                      Roll
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="class-details-header">
+                              <h3>{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
+                              <span className="class-pill role-pill">
+                                {currentClassDetails.role ?? 'Class'}
+                              </span>
+                            </div>
+                            <p className="subtle">{currentClassDetails.description}</p>
+                            <div className="detail-card">
+                              <strong>Starting HP</strong>
+                              <p>{currentClassDetails.hp}</p>
+                            </div>
+                            <h4>Starting Stats</h4>
+                            <div className="stat-grid">
+                              {STATS.map((stat) => (
+                                <div className="stat" key={stat}>
+                                  <span>{stat}</span>
+                                  <span>{currentClassDetails.stats[stat]}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <h4>Starting Reputation</h4>
+                            <div className="stat-grid">
+                              {REPUTATION.map((rep) => (
+                                <div className="stat" key={rep}>
+                                  <span>{rep}</span>
+                                  <span>{currentClassDetails.reputation[rep]}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
                       </>
                     ) : (
                       <>
@@ -316,17 +495,6 @@ export default function Create() {
                     )}
                   </div>
                 </div>
-                {selectedClass === CUSTOM_CLASS.name && (
-                  <label className="field">
-                    <span>Create your own class (200 character max)</span>
-                    <textarea
-                      rows={4}
-                      value={customClassText}
-                      onChange={(event) => setCustomClassText(event.target.value)}
-                      maxLength={200}
-                    />
-                  </label>
-                )}
               </>
             )}
 

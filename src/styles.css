@@ -696,7 +696,7 @@ textarea:focus {
 .class-layout {
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(520px, 1.6fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(560px, 1.4fr) minmax(420px, 1fr);
 }
 
 .class-grid {
@@ -728,17 +728,18 @@ textarea:focus {
   margin-bottom: 2px;
 }
 
-.class-role {
-  font-size: 0.78rem;
-  color: var(--accent);
-  margin-bottom: 4px;
-}
-
 .class-card-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+}
+
+.class-pill-group {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .class-pill {
@@ -748,6 +749,11 @@ textarea:focus {
   border: 1px solid rgba(116, 199, 194, 0.5);
   color: var(--accent-2);
   white-space: nowrap;
+}
+
+.class-pill.role-pill {
+  border-color: rgba(214, 179, 106, 0.5);
+  color: var(--accent);
 }
 
 .class-card p {
@@ -763,10 +769,63 @@ textarea:focus {
 
 .class-details {
   border-radius: 16px;
-  padding: 16px;
+  padding: 18px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: rgba(255, 255, 255, 0.04);
   min-height: 100%;
+}
+
+.class-details-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.custom-class-form .field {
+  margin-bottom: 14px;
+}
+
+.custom-stats-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
+}
+
+.custom-stats-header .btn.ghost {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.stat-roll {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+}
+
+.stat-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.stat-value {
+  min-width: 34px;
+  text-align: right;
+}
+
+.stat-roll-btn {
+  padding: 4px 10px;
+  font-size: 0.72rem;
+  min-width: 56px;
+}
+
+.custom-stat-grid {
+  grid-template-columns: repeat(2, minmax(240px, 1fr));
 }
 
 .class-details h4 {
@@ -866,6 +925,10 @@ textarea:focus {
   }
 
   .class-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .custom-stat-grid {
     grid-template-columns: 1fr;
   }
 
