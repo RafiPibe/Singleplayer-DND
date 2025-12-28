@@ -35,6 +35,8 @@ const LOW_STATS = 2;
 
 export const CLASSES = [
   {
+    nickname: 'Vanguard',
+    role: 'Knight',
     name: 'Vanguard Knight',
     description: 'Oathbound protector with steel nerves and a banner on their back.',
     hp: 24,
@@ -44,6 +46,8 @@ export const CLASSES = [
     reputation: { Honor: 5, Bravery: 4, Justice: 4, Mercy: 2, Loyalty: 5, Generosity: 3 },
   },
   {
+    nickname: 'Whisper',
+    role: 'Rogue',
     name: 'Whisper Rogue',
     description: 'Shadow-hopper who opens locks, pockets, and doors without a sound.',
     hp: 16,
@@ -53,6 +57,8 @@ export const CLASSES = [
     reputation: { Honor: 2, Bravery: 3, Justice: 2, Mercy: 3, Loyalty: 2, Generosity: 3 },
   },
   {
+    nickname: 'Spellweaver',
+    role: 'Arcanist',
     name: 'Spellweaver',
     description: 'Arcane scholar who bends reality with careful incantations.',
     hp: 14,
@@ -62,6 +68,8 @@ export const CLASSES = [
     reputation: { Honor: 3, Bravery: 2, Justice: 3, Mercy: 3, Loyalty: 3, Generosity: 2 },
   },
   {
+    nickname: 'Bloodbinder',
+    role: 'Hexer',
     name: 'Bloodbinder',
     description: 'Forbidden caster who trades vitality for merciless power.',
     hp: 18,
@@ -71,6 +79,8 @@ export const CLASSES = [
     reputation: { Honor: 1, Bravery: 4, Justice: 2, Mercy: 1, Loyalty: 2, Generosity: 1 },
   },
   {
+    nickname: 'Storm',
+    role: 'Ranger',
     name: 'Storm Ranger',
     description: 'Wild hunter who reads wind, tracks beasts, and lives with the bow.',
     hp: 20,
@@ -80,6 +90,8 @@ export const CLASSES = [
     reputation: { Honor: 3, Bravery: 4, Justice: 3, Mercy: 3, Loyalty: 4, Generosity: 3 },
   },
   {
+    nickname: 'Silver',
+    role: 'Bard',
     name: 'Silver Bard',
     description: 'Stage-born storyteller who disarms danger with charm and song.',
     hp: 16,
@@ -89,6 +101,8 @@ export const CLASSES = [
     reputation: { Honor: 3, Bravery: 2, Justice: 2, Mercy: 4, Loyalty: 3, Generosity: 5 },
   },
   {
+    nickname: 'Golem',
+    role: 'Fist',
     name: 'Golem Fist',
     description: 'Relentless brawler whose hands hit like stone drums.',
     hp: 26,
@@ -98,6 +112,8 @@ export const CLASSES = [
     reputation: { Honor: 3, Bravery: 5, Justice: 3, Mercy: 2, Loyalty: 4, Generosity: 2 },
   },
   {
+    nickname: 'Inquisitor',
+    role: 'Judge',
     name: 'Inquisitor',
     description: 'Truth-seeker who reads motives and drags secrets into the light.',
     hp: 18,
@@ -107,6 +123,8 @@ export const CLASSES = [
     reputation: { Honor: 4, Bravery: 3, Justice: 5, Mercy: 2, Loyalty: 4, Generosity: 2 },
   },
   {
+    nickname: 'Shade',
+    role: 'Alchemist',
     name: 'Shade Alchemist',
     description: 'Potion-brewer who mutates the battlefield with clever mixtures.',
     hp: 17,
@@ -118,6 +136,8 @@ export const CLASSES = [
 ];
 
 export const CUSTOM_CLASS = {
+  nickname: 'Custom',
+  role: 'Class',
   name: 'Custom Class',
   description: 'Define your own class fantasy and let the stats adapt.',
   hp: 18,

@@ -12,6 +12,11 @@ export default function Home() {
     const loadCampaigns = async () => {
       setLoading(true);
       setError('');
+      if (!supabase) {
+        setError('Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+        setLoading(false);
+        return;
+      }
       const { data, error: fetchError } = await supabase
         .from('campaigns')
         .select('*')
@@ -30,31 +35,33 @@ export default function Home() {
   }, []);
 
   return (
-    <div className="page">
+    <div className="page home-page">
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <header className="site-header">
-        <p className="eyebrow">Singleplayer DnD</p>
-        <h1>Welcome to the tavern, friend</h1>
-        <p className="lede">
-          Keep your stories alive, roll the dice, and step back into any campaign.
-        </p>
-        <div className="header-actions">
-          <button className="btn primary" onClick={() => navigate('/create')}>
-            Start a New Campaign
-          </button>
-          <Link className="btn ghost" to="/create">
-            Character Creator
-          </Link>
-        </div>
+      <header className="page-topbar">
+        <Link className="brand" to="/">Pibe's Tavern</Link>
       </header>
 
-      <main className="content">
-        <section className="panel">
+      <main className="home-hero">
+        <div className="hero-center">
+          <p className="welcome">Welcome to the tavern, friend</p>
+          <p className="lede">
+            Your quests await. Create a new adventure or continue your journey.
+          </p>
+        </div>
+
+        <section className="panel home-panel">
           <div className="panel-header">
-            <h2>Campaign Ledger</h2>
-            <span className="subtle">{campaigns.length} saved campaigns</span>
+            <div>
+              <h2>Campaign Ledger</h2>
+              <span className="subtle">{campaigns.length} saved campaigns</span>
+            </div>
+            <div className="header-actions">
+              <button className="btn ghost" onClick={() => navigate('/create')}>
+                New Campaign
+              </button>
+            </div>
           </div>
 
           {loading && <p className="subtle">Loading campaigns...</p>}
@@ -88,10 +95,6 @@ export default function Home() {
           )}
         </section>
       </main>
-
-      <footer className="site-footer">
-        <p>Stories are stored in Supabase.</p>
-      </footer>
     </div>
   );
 }

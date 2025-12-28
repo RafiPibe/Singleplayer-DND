@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   CLASSES,
   CUSTOM_CLASS,
@@ -94,6 +94,27 @@ export default function Create() {
     return '';
   };
 
+  const isStepComplete = (stepNumber) => {
+    if (stepNumber === 1) return name.trim().length >= 2;
+    if (stepNumber === 2) {
+      const hasLook = look.trim().length >= 10;
+      const hasGender = gender === 'Custom' ? genderCustom.trim().length > 0 : true;
+      return hasLook && hasGender;
+    }
+    if (stepNumber === 3) {
+      if (!selectedClass) return false;
+      if (selectedClass === CUSTOM_CLASS.name) return customClassText.trim().length >= 10;
+      return true;
+    }
+    if (stepNumber === 4) return backstory.trim().length >= 20;
+    return false;
+  };
+
+  const maxCompletedStep = Math.max(
+    0,
+    ...[1, 2, 3, 4].filter((stepNumber) => isStepComplete(stepNumber))
+  );
+
   const nextStep = () => {
     const message = validateStep();
     if (message) {
@@ -119,6 +140,10 @@ export default function Create() {
 
     if (!currentClassDetails) {
       setError('Choose a class before saving.');
+      return;
+    }
+    if (!supabase) {
+      setError('Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
       return;
     }
 
@@ -154,23 +179,31 @@ export default function Create() {
     navigate(`/campaign/${data.id}`);
   };
 
+  const handleKeyDown = (event) => {
+    if (event.key !== 'Enter') return;
+    if (event.target.tagName === 'TEXTAREA') return;
+    event.preventDefault();
+    if (step < TOTAL_STEPS) {
+      nextStep();
+    }
+  };
+
   return (
     <div className="page">
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <main className="content">
-        <section className="panel builder">
-          <div className="panel-header">
-            <h2>New Campaign</h2>
-            <span className="subtle">Step {step} of {TOTAL_STEPS}</span>
-          </div>
+      <header className="page-topbar">
+        <Link className="brand" to="/">Pibe's Tavern</Link>
+      </header>
 
-          {error && <p className="error">{error}</p>}
+      <main className="content create-layout">
+        <section className="builder create-panel">
+          <div className="create-header" aria-hidden="true"></div>
 
-          <form onSubmit={handleSubmit}>
+          <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
             {step === 1 && (
-              <label className="field">
+              <label className="field center-field">
                 <span>What is your character name?</span>
                 <input
                   type="text"
@@ -184,7 +217,7 @@ export default function Create() {
 
             {step === 2 && (
               <>
-                <label className="field">
+                <label className="field center-field">
                   <span>What does your character look like?</span>
                   <textarea
                     rows={4}
@@ -194,32 +227,39 @@ export default function Create() {
                     required
                   />
                 </label>
-                <div className="field inline">
-                  <label>
-                    <span>Gender</span>
-                    <select value={gender} onChange={(event) => setGender(event.target.value)}>
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Custom">Custom</option>
-                    </select>
-                  </label>
-                  <label>
-                    <span>Custom gender</span>
+                <div className="field center-field">
+                  <span>Gender</span>
+                  <div className="gender-buttons">
+                    {['Male', 'Female', 'Custom'].map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        className={`btn ghost ${gender === option ? 'active' : ''}`}
+                        onClick={() => setGender(option)}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
+                  <div className={`gender-custom ${gender === 'Custom' ? 'open' : ''}`}>
                     <input
                       type="text"
                       value={genderCustom}
                       onChange={(event) => setGenderCustom(event.target.value)}
                       maxLength={24}
                       disabled={gender !== 'Custom'}
-                      placeholder="Enter if custom"
+                      placeholder="Enter custom gender"
                     />
-                  </label>
+                  </div>
                 </div>
               </>
             )}
 
             {step === 3 && (
               <>
+                <div className="field center-field">
+                  <span>What is your character's class?</span>
+                </div>
                 <div className="class-layout">
                   <div className="class-grid">
                     {classOptions.map((cls) => (
@@ -229,7 +269,13 @@ export default function Create() {
                         className={`class-card ${selectedClass === cls.name ? 'active' : ''}`}
                         onClick={() => setSelectedClass(cls.name)}
                       >
-                        <h4>{cls.name}</h4>
+                        <div className="class-card-header">
+                          <div>
+                            <div className="class-title">{cls.nickname ?? cls.name}</div>
+                            <div className="class-role">{cls.role ?? 'Class'}</div>
+                          </div>
+                          <span className="class-pill">HP {cls.hp ?? '--'}</span>
+                        </div>
                         <p>{cls.description}</p>
                       </button>
                     ))}
@@ -285,7 +331,7 @@ export default function Create() {
             )}
 
             {step === 4 && (
-              <label className="field">
+              <label className="field center-field">
                 <span>Tell us your backstory</span>
                 <textarea
                   rows={5}
@@ -297,27 +343,59 @@ export default function Create() {
               </label>
             )}
 
-            <div className="builder-actions">
-              <button type="button" className="btn ghost" onClick={prevStep} disabled={step === 1}>
-                Back
+            <div className="chevron-nav">
+              <button
+                type="button"
+                className="chevron-btn"
+                onClick={prevStep}
+                disabled={step === 1}
+                aria-label="Previous step"
+              >
+                &lt;
               </button>
-              {step < TOTAL_STEPS && (
-                <button type="button" className="btn ghost" onClick={nextStep}>
-                  Next
-                </button>
-              )}
-              {step === TOTAL_STEPS && (
+              <button
+                type={step === TOTAL_STEPS ? 'submit' : 'button'}
+                className="chevron-btn"
+                onClick={step < TOTAL_STEPS ? nextStep : undefined}
+                disabled={step === TOTAL_STEPS && saving}
+                aria-label="Next step"
+              >
+                &gt;
+              </button>
+            </div>
+
+            {step === TOTAL_STEPS && (
+              <div className="builder-actions center-actions">
                 <button type="submit" className="btn primary" disabled={saving}>
                   {saving ? 'Saving...' : 'Create Campaign'}
                 </button>
-              )}
-              <button
-                type="button"
-                className="btn link"
-                onClick={() => navigate('/')}
-              >
-                Cancel
-              </button>
+              </div>
+            )}
+            {error && <p className="error error-inline">{error}</p>}
+
+            <div className="stepper">
+              {['Name', 'Looks', 'Class', 'Backstory'].map((label, index) => {
+                const stepNumber = index + 1;
+                const isActive = step === stepNumber;
+                const isCompleted = isStepComplete(stepNumber) && stepNumber !== step;
+                const canJump = isActive || stepNumber <= maxCompletedStep;
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    className={`stepper-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
+                    onClick={() => {
+                      if (!canJump) return;
+                      setError('');
+                      setStep(stepNumber);
+                    }}
+                    disabled={!canJump}
+                  >
+                    <span className="stepper-circle">{stepNumber}</span>
+                    <span className="stepper-label">{label}</span>
+                  </button>
+                );
+              })}
             </div>
           </form>
         </section>
