@@ -1,4 +1,6 @@
-Singleplayer DnD Campaign (React + Supabase)
+Singleplayer DnD Campaign (WIP)
+
+(Built with React + Supabase)
 
 Setup
 - Install deps: npm install

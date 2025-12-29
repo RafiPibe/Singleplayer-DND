@@ -95,6 +95,13 @@ const sampleInventoryData = {
         weaponType: 'One-Handed',
         damage: '1d6',
       },
+      {
+        id: 'wpn-2',
+        name: 'Gravebound Greatsword',
+        rarity: 'Rare',
+        weaponType: 'Two-Handed',
+        damage: '1d12',
+      },
     ],
     armor: [
       { id: 'arm-1', name: 'Verdant Tunic', rarity: 'Uncommon', slot: 'Chest', ac: 3 },
@@ -110,11 +117,111 @@ const sampleInventoryData = {
   },
 };
 
+const EMPTY_EQUIPPED = {
+  weapons: [null, null],
+  armor: {
+    Head: null,
+    Body: null,
+    Arms: null,
+    Leggings: null,
+    Cloak: null,
+  },
+};
+
+const normalizeInventory = (inventory) => {
+  const base = inventory && !Array.isArray(inventory) ? inventory : sampleInventoryData;
+  return {
+    ...base,
+    summary: {
+      ...sampleInventoryData.summary,
+      ...(base.summary ?? {}),
+    },
+    equipped: {
+      weapons: Array.isArray(base?.equipped?.weapons)
+        ? [...base.equipped.weapons, null, null].slice(0, 2)
+        : [...EMPTY_EQUIPPED.weapons],
+      armor: {
+        ...EMPTY_EQUIPPED.armor,
+        ...(base?.equipped?.armor ?? {}),
+      },
+    },
+    sections: {
+      weapons: base?.sections?.weapons ?? [],
+      armor: base?.sections?.armor ?? [],
+      consumables: base?.sections?.consumables ?? [],
+      misc: base?.sections?.misc ?? [],
+    },
+  };
+};
+
 const sampleJournalEntries = [
   {
     id: 'jrnl-1',
     date: new Date().toLocaleDateString(),
     text: 'The courier left a letter with a river crest. Something about a creator in the docks.',
+  },
+];
+
+const sampleNpcs = [
+  {
+    id: 'npc-1',
+    name: 'Old Greg',
+    role: 'Innkeeper',
+    summary: 'Keeps the hearth warm and the rumors warmer.',
+    reputation: 12,
+    lastSeen: 'Tavern common room',
+  },
+  {
+    id: 'npc-2',
+    name: 'Master Aldwin',
+    role: 'Scribe',
+    summary: 'Catalogues forbidden lore and speaks in riddles.',
+    reputation: -3,
+    lastSeen: 'Scriptorium',
+  },
+  {
+    id: 'npc-3',
+    name: 'River Crest Courier',
+    role: 'Messenger',
+    summary: 'Arrived soaked in stormwater, clutching a sealed letter.',
+    reputation: 4,
+    lastSeen: 'Upper tower room',
+  },
+];
+
+const sampleOssuary = [
+  {
+    id: 'oss-1',
+    name: 'Charred Boneblade',
+    type: 'Weapon',
+    rarity: 'Rare',
+    weaponType: 'Two-Handed',
+    damage: '2d6',
+    note: 'Recovered from the ash-wreathed knight.',
+  },
+  {
+    id: 'oss-2',
+    name: 'Cracked Warden Helm',
+    type: 'Armor',
+    rarity: 'Uncommon',
+    slot: 'Head',
+    ac: 2,
+    note: 'Still warm to the touch.',
+  },
+  {
+    id: 'oss-3',
+    name: 'Wraithglass Phial',
+    type: 'Consumable',
+    rarity: 'Epic',
+    effect: 'Soul',
+    note: 'Swirls with trapped light.',
+  },
+  {
+    id: 'oss-4',
+    name: 'Blood-etched Signet',
+    type: 'Item',
+    rarity: 'Legendary',
+    note: 'Marked with a forgotten crest.',
   },
 ];
 
@@ -300,6 +407,10 @@ export default function Campaign() {
   const [rumors, setRumors] = useState(sampleRumors);
   const [journalEntries, setJournalEntries] = useState(sampleJournalEntries);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
+  const [inventoryData, setInventoryData] = useState(() => normalizeInventory(sampleInventoryData));
+  const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
+  const [hpCurrent, setHpCurrent] = useState(0);
+  const [activeBuffs, setActiveBuffs] = useState([]);
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -322,6 +433,8 @@ export default function Campaign() {
         setCampaign(null);
       } else {
         setCampaign(data);
+        setHpCurrent(data.hp_current ?? data.hp ?? 0);
+        setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
         setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
         setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
         setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
@@ -334,6 +447,16 @@ export default function Campaign() {
           setJournalEntries(data.journal);
         } else {
           setJournalEntries(sampleJournalEntries);
+        }
+        if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
+          setInventoryData(normalizeInventory(data.inventory));
+        } else {
+          setInventoryData(normalizeInventory(sampleInventoryData));
+        }
+        if (Array.isArray(data.ossuary) && data.ossuary.length) {
+          setOssuaryLoot(data.ossuary);
+        } else {
+          setOssuaryLoot(sampleOssuary);
         }
       }
       setLoading(false);
@@ -352,12 +475,11 @@ export default function Campaign() {
   const statsByName = campaign?.stats ?? {};
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 0;
-  const hpCurrent = campaign?.hp_current ?? hpMax;
-  const inventoryData = useMemo(() => {
-    if (campaign?.inventory && !Array.isArray(campaign.inventory) && campaign.inventory.summary) {
-      return campaign.inventory;
+  const npcList = useMemo(() => {
+    if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
+      return campaign.npcs;
     }
-    return sampleInventoryData;
+    return sampleNpcs;
   }, [campaign]);
 
   const getStatRequirement = (stat) => STAT_REQUIREMENTS[stat] ?? 4;
@@ -391,6 +513,76 @@ export default function Campaign() {
   const getRepPosition = (value) => {
     const clamped = Math.max(-20, Math.min(20, value));
     return ((clamped + 20) / 40) * 100;
+  };
+
+  const resolveArmorSlot = (slot) => {
+    if (!slot) return 'Body';
+    const normalized = slot.toLowerCase();
+    if (['head', 'helm', 'helmet'].includes(normalized)) return 'Head';
+    if (['body', 'chest', 'torso'].includes(normalized)) return 'Body';
+    if (['arms', 'arm', 'gloves'].includes(normalized)) return 'Arms';
+    if (['legs', 'leg', 'leggings'].includes(normalized)) return 'Leggings';
+    if (['cloak', 'cape'].includes(normalized)) return 'Cloak';
+    return 'Body';
+  };
+
+  const isTwoHandedWeapon = (item) =>
+    (item?.weaponType ?? item?.type ?? '').toLowerCase().includes('two');
+
+  const normalizeDice = (value) => {
+    if (!value) return null;
+    const match = String(value).trim().match(/^(\d+)d(\d+)$/i);
+    if (!match) return null;
+    return { count: Number(match[1]), sides: Number(match[2]) };
+  };
+
+  const formatDamageLabel = (weapons, bonus) => {
+    if (!weapons.length) {
+      return bonus ? `d4${bonus > 0 ? `+${bonus}` : bonus}` : 'd4';
+    }
+    const dice = weapons.map((weapon) => normalizeDice(weapon.damage)).filter(Boolean);
+    if (!dice.length) {
+      return bonus ? `d4${bonus > 0 ? `+${bonus}` : bonus}` : 'd4';
+    }
+    const allSameSides = dice.every((roll) => roll.sides === dice[0].sides);
+    const baseLabel = allSameSides
+      ? `${dice.reduce((sum, roll) => sum + roll.count, 0)}d${dice[0].sides}`
+      : dice.map((roll) => `${roll.count}d${roll.sides}`).join('+');
+    if (!bonus) return baseLabel;
+    return `${baseLabel}${bonus > 0 ? `+${bonus}` : bonus}`;
+  };
+
+  const formatWeaponLabel = (weapons) => {
+    if (!weapons.length) return 'Unarmed';
+    if (weapons.some(isTwoHandedWeapon)) return 'Two-Handed';
+    if (weapons.length > 1) return 'Dual One-Handed';
+    return 'One-Handed';
+  };
+
+  const getArmorSlotLabel = (slotKey) => {
+    switch (slotKey) {
+      case 'Head':
+        return 'Head';
+      case 'Body':
+        return 'Chest';
+      case 'Arms':
+        return 'Arms';
+      case 'Leggings':
+        return 'Legs';
+      case 'Cloak':
+        return 'Cloak';
+      default:
+        return 'Chest';
+    }
+  };
+
+  const getNpcDisposition = (value) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    if (safeValue >= 15) return { label: 'Trusted', tone: 'positive' };
+    if (safeValue >= 5) return { label: 'Friendly', tone: 'positive' };
+    if (safeValue <= -15) return { label: 'Hostile', tone: 'negative' };
+    if (safeValue <= -5) return { label: 'Wary', tone: 'warning' };
+    return { label: 'Neutral', tone: 'neutral' };
   };
 
   const repChart = useMemo(() => {
@@ -449,6 +641,280 @@ export default function Campaign() {
     const result = Math.floor(Math.random() * sides) + 1;
     const entry = { id: `roll-${Date.now()}-${sides}`, sides, result };
     setRolls((prev) => [entry, ...prev]);
+  };
+
+  const removeInventoryItem = (items, item) => {
+    const key = item?.id ?? item?.name;
+    return items.filter((entry) => (entry.id ?? entry.name) !== key);
+  };
+
+  const uniqueItemsById = (items) => {
+    const seen = new Set();
+    return items.filter((item) => {
+      const key = item?.id ?? item?.name;
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  };
+
+  const handleEquipWeapon = async (item) => {
+    const baseInventory = normalizeInventory(inventoryData);
+    const nextWeaponSlots = [...baseInventory.equipped.weapons];
+    const equippedWeapon = {
+      ...item,
+      type: item.type ?? item.weaponType ?? 'Weapon',
+    };
+    const weaponsList = removeInventoryItem(baseInventory.sections.weapons, item);
+    if (isTwoHandedWeapon(item)) {
+      const currentEquipped = uniqueItemsById(nextWeaponSlots.filter(Boolean));
+      if (currentEquipped.length) {
+        weaponsList.push(
+          ...currentEquipped.map((weapon) => ({
+            ...weapon,
+            weaponType: weapon.weaponType ?? weapon.type ?? 'Weapon',
+          }))
+        );
+      }
+      nextWeaponSlots[0] = equippedWeapon;
+      nextWeaponSlots[1] = equippedWeapon;
+    } else {
+      const twoHandedEquipped = nextWeaponSlots.find(isTwoHandedWeapon);
+      if (twoHandedEquipped) {
+        weaponsList.push({
+          ...twoHandedEquipped,
+          weaponType: twoHandedEquipped.weaponType ?? twoHandedEquipped.type ?? 'Weapon',
+        });
+        nextWeaponSlots[0] = null;
+        nextWeaponSlots[1] = null;
+      }
+      const targetIndex = nextWeaponSlots.findIndex((slot) => !slot);
+      const slotIndex = targetIndex === -1 ? 0 : targetIndex;
+      const replaced = nextWeaponSlots[slotIndex];
+      nextWeaponSlots[slotIndex] = equippedWeapon;
+      if (replaced) {
+        weaponsList.push({
+          ...replaced,
+          weaponType: replaced.weaponType ?? replaced.type ?? 'Weapon',
+        });
+      }
+    }
+
+    const nextInventory = normalizeInventory({
+      ...baseInventory,
+      equipped: {
+        ...baseInventory.equipped,
+        weapons: nextWeaponSlots,
+      },
+      sections: {
+        ...baseInventory.sections,
+        weapons: weaponsList,
+      },
+    });
+
+    setInventoryData(nextInventory);
+    await savePatch({ inventory: nextInventory });
+  };
+
+  const handleEquipArmor = async (item) => {
+    const baseInventory = normalizeInventory(inventoryData);
+    const slotKey = resolveArmorSlot(item.slot);
+    const replaced = baseInventory.equipped.armor?.[slotKey];
+    const armorList = removeInventoryItem(baseInventory.sections.armor, item);
+
+    if (replaced) {
+      armorList.push({
+        ...replaced,
+        slot: getArmorSlotLabel(slotKey),
+      });
+    }
+
+    const nextInventory = normalizeInventory({
+      ...baseInventory,
+      equipped: {
+        ...baseInventory.equipped,
+        armor: {
+          ...baseInventory.equipped.armor,
+          [slotKey]: item,
+        },
+      },
+      sections: {
+        ...baseInventory.sections,
+        armor: armorList,
+      },
+    });
+
+    setInventoryData(nextInventory);
+    await savePatch({ inventory: nextInventory });
+  };
+
+  const handleUnequipWeapon = async (index) => {
+    const baseInventory = normalizeInventory(inventoryData);
+    const nextWeaponSlots = [...baseInventory.equipped.weapons];
+    const removed = nextWeaponSlots[index];
+    if (!removed) return;
+    const shouldClearBoth = isTwoHandedWeapon(removed);
+    nextWeaponSlots[index] = null;
+    if (shouldClearBoth) {
+      const otherIndex = index === 0 ? 1 : 0;
+      nextWeaponSlots[otherIndex] = null;
+    }
+
+    const weaponsList = [
+      ...baseInventory.sections.weapons,
+      {
+        ...removed,
+        weaponType: removed.weaponType ?? removed.type ?? 'Weapon',
+      },
+    ];
+
+    const nextInventory = normalizeInventory({
+      ...baseInventory,
+      equipped: {
+        ...baseInventory.equipped,
+        weapons: nextWeaponSlots,
+      },
+      sections: {
+        ...baseInventory.sections,
+        weapons: weaponsList,
+      },
+    });
+
+    setInventoryData(nextInventory);
+    await savePatch({ inventory: nextInventory });
+  };
+
+  const handleUnequipArmor = async (slotKey) => {
+    const baseInventory = normalizeInventory(inventoryData);
+    const removed = baseInventory.equipped.armor?.[slotKey];
+    if (!removed) return;
+    const nextArmor = {
+      ...baseInventory.equipped.armor,
+      [slotKey]: null,
+    };
+
+    const armorList = [
+      ...baseInventory.sections.armor,
+      {
+        ...removed,
+        slot: getArmorSlotLabel(slotKey),
+      },
+    ];
+
+    const nextInventory = normalizeInventory({
+      ...baseInventory,
+      equipped: {
+        ...baseInventory.equipped,
+        armor: nextArmor,
+      },
+      sections: {
+        ...baseInventory.sections,
+        armor: armorList,
+      },
+    });
+
+    setInventoryData(nextInventory);
+    await savePatch({ inventory: nextInventory });
+  };
+
+  const buffFromConsumable = (item, healAmount) => {
+    const effect = item.effect ?? item.name ?? 'Potion';
+    if (effect.toLowerCase().includes('health')) {
+      return {
+        id: `buff-${Date.now()}`,
+        name: 'Regeneration',
+        detail: `Healed +${healAmount} HP`,
+      };
+    }
+    if (effect.toLowerCase().includes('strength')) {
+      return {
+        id: `buff-${Date.now()}`,
+        name: 'Strength',
+        detail: '+1d on next roll',
+      };
+    }
+    if (effect.toLowerCase().includes('soul')) {
+      return {
+        id: `buff-${Date.now()}`,
+        name: 'Soul',
+        detail: '+1d on next roll',
+      };
+    }
+    return {
+      id: `buff-${Date.now()}`,
+      name: effect,
+      detail: 'Empowered for the next roll',
+    };
+  };
+
+  const handleUseConsumable = async (item) => {
+    const effect = item.effect ?? '';
+    if (effect.toLowerCase().includes('health') && hpCurrent >= hpMax) {
+      return;
+    }
+    const healAmount = effect.toLowerCase().includes('health') ? Math.min(5, hpMax - hpCurrent) : 0;
+    const nextHp = healAmount ? Math.min(hpMax, hpCurrent + healAmount) : hpCurrent;
+    const nextConsumables = removeInventoryItem(inventoryData.sections.consumables, item);
+    const nextInventory = normalizeInventory({
+      ...inventoryData,
+      sections: {
+        ...inventoryData.sections,
+        consumables: nextConsumables,
+      },
+    });
+    const nextBuff = buffFromConsumable(item, healAmount);
+    const nextBuffs = [nextBuff, ...activeBuffs].slice(0, 5);
+
+    setHpCurrent(nextHp);
+    setInventoryData(nextInventory);
+    setActiveBuffs(nextBuffs);
+    await savePatch({ inventory: nextInventory, hp_current: nextHp, buffs: nextBuffs });
+  };
+
+  const addLootToInventory = (items, baseInventory) => {
+    const sectionMap = {
+      Weapon: 'weapons',
+      Armor: 'armor',
+      Consumable: 'consumables',
+      Item: 'misc',
+    };
+    return items.reduce((nextInventory, item) => {
+      const section = sectionMap[item.type] ?? 'misc';
+      const newItem = {
+        id: item.id ?? `loot-${Date.now()}`,
+        name: item.name,
+        rarity: item.rarity,
+        weaponType: item.weaponType,
+        damage: item.damage,
+        slot: item.slot,
+        ac: item.ac,
+        effect: item.effect,
+        note: item.note,
+      };
+      return {
+        ...nextInventory,
+        sections: {
+          ...nextInventory.sections,
+          [section]: [...(nextInventory.sections?.[section] ?? []), newItem],
+        },
+      };
+    }, baseInventory);
+  };
+
+  const handleClaimLoot = async (item) => {
+    const nextOssuary = ossuaryLoot.filter((loot) => loot.id !== item.id);
+    const nextInventory = addLootToInventory([item], normalizeInventory(inventoryData));
+    setOssuaryLoot(nextOssuary);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: nextOssuary, inventory: nextInventory });
+  };
+
+  const handleClaimAllLoot = async () => {
+    if (!ossuaryLoot.length) return;
+    const nextInventory = addLootToInventory(ossuaryLoot, normalizeInventory(inventoryData));
+    setOssuaryLoot([]);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: [], inventory: nextInventory });
   };
 
   const leftMenu = [
@@ -1004,19 +1470,81 @@ export default function Campaign() {
                   {inventoryTab === 'inventory' ? (
                     <div className="grid gap-3">
                       <div className="grid grid-cols-2 gap-2 text-center text-sm">
-                        {[
-                          { label: 'Crowns', value: inventoryData.summary.crowns, tone: 'text-[var(--accent)]' },
-                          { label: 'AC', value: inventoryData.summary.ac, tone: 'text-[var(--accent-2)]' },
-                          { label: 'Damage', value: inventoryData.summary.damage, tone: 'text-[var(--accent)]' },
-                          { label: 'Weapon', value: inventoryData.summary.weaponType, tone: 'text-[var(--soft)]' },
-                        ].map((item) => (
-                          <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 px-2 py-3">
-                            <p className="m-0 text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
-                              {item.label}
-                            </p>
-                            <p className={`m-0 text-base font-semibold ${item.tone}`}>{item.value}</p>
-                          </div>
-                        ))}
+                        {(() => {
+                          const equippedWeapons = (inventoryData?.equipped?.weapons ?? []).filter(Boolean);
+                          const twoHandedEquipped = equippedWeapons.find(isTwoHandedWeapon);
+                          const weaponsForDamage = twoHandedEquipped ? [twoHandedEquipped] : equippedWeapons;
+                          const weaponLabel = formatWeaponLabel(weaponsForDamage);
+                          const bonusStat =
+                            weaponsForDamage.length === 0
+                              ? 0
+                              : twoHandedEquipped
+                                ? statsByName['Two Handed'] ?? 0
+                                : statsByName['One Handed'] ?? 0;
+                          const damageLabel = formatDamageLabel(weaponsForDamage, bonusStat);
+                          const totalAc = Object.values(inventoryData?.equipped?.armor ?? {}).reduce(
+                            (sum, item) => sum + (item?.ac ?? 0),
+                            0
+                          );
+                          const buffPrimary = activeBuffs[0];
+                          const buffValue = buffPrimary?.name ?? 'None';
+                          const buffDetail = buffPrimary?.detail ?? 'No active effects';
+                          const summaryCards = [
+                            {
+                              label: 'Buff',
+                              value: buffValue,
+                              detail: buffDetail,
+                              tone: 'text-[var(--soft)]',
+                              icon: (
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M12 3v6m0 0 4-4m-4 4-4-4M5 13h14M7 21h10" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ),
+                            },
+                            {
+                              label: 'AC',
+                              value: totalAc,
+                              tone: 'text-[var(--accent-2)]',
+                              icon: (
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M12 3l7 4v6c0 4-3 6-7 8-4-2-7-4-7-8V7l7-4Z" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ),
+                            },
+                            {
+                              label: 'Damage',
+                              value: damageLabel,
+                              tone: 'text-[var(--accent)]',
+                              icon: (
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M4 20l6-6m0 0 4-4 4 4-4 4-4-4Zm0 0-4-4 2-2 4 4" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ),
+                            },
+                            {
+                              label: 'Weapon',
+                              value: weaponLabel,
+                              tone: 'text-[var(--soft)]',
+                              icon: (
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M6 18 18 6m0 0h-4m4 0v4M6 18l-2 2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ),
+                            },
+                          ];
+                          return summaryCards.map((item) => (
+                            <div key={item.label} className="rounded-xl border border-white/10 bg-white/5 px-2 py-3">
+                              <div className="flex items-center justify-center gap-2 text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
+                                <span className="text-[var(--accent)]">{item.icon}</span>
+                                <span>{item.label}</span>
+                              </div>
+                              <p className={`m-0 mt-1 text-base font-semibold ${item.tone}`}>{item.value}</p>
+                              {item.detail ? (
+                                <p className="m-0 mt-1 text-[0.7rem] text-[var(--soft)]">{item.detail}</p>
+                              ) : null}
+                            </div>
+                          ));
+                        })()}
                       </div>
                       <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
                         <div className="mb-3 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
@@ -1026,10 +1554,20 @@ export default function Campaign() {
                           {inventoryData.equipped.weapons.map((item, index) => (
                             <div
                               key={`weapon-${index}`}
-                              className={`rounded-xl border p-2 text-xs ${
+                              className={`relative rounded-xl border p-2 text-xs ${
                                 item ? 'border-[rgba(214,179,106,0.4)]' : 'border-dashed border-white/10 text-[var(--soft)]'
                               }`}
                             >
+                              {item ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnequipWeapon(index)}
+                                  className="absolute -right-2 -top-2 h-5 w-5 rounded-full border border-red-500/60 bg-[rgba(10,12,16,0.9)] text-[0.6rem] font-semibold text-red-300 shadow-[0_4px_10px_rgba(0,0,0,0.35)] transition hover:border-red-400 hover:text-red-200"
+                                  aria-label="Unequip weapon"
+                                >
+                                  ×
+                                </button>
+                              ) : null}
                               <p className="m-0 font-semibold">{item ? item.name : 'Empty Slot'}</p>
                               <p className="m-0 text-[var(--soft)]">
                                 {item ? `${item.type} • ${item.damage}` : 'Weapon'}
@@ -1041,10 +1579,20 @@ export default function Campaign() {
                           {Object.entries(inventoryData.equipped.armor).map(([slot, item]) => (
                             <div
                               key={slot}
-                              className={`rounded-xl border p-2 text-xs ${
+                              className={`relative rounded-xl border p-2 text-xs ${
                                 item ? 'border-[rgba(116,199,194,0.4)]' : 'border-dashed border-white/10 text-[var(--soft)]'
                               }`}
                             >
+                              {item ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleUnequipArmor(slot)}
+                                  className="absolute -right-2 -top-2 h-5 w-5 rounded-full border border-red-500/60 bg-[rgba(10,12,16,0.9)] text-[0.6rem] font-semibold text-red-300 shadow-[0_4px_10px_rgba(0,0,0,0.35)] transition hover:border-red-400 hover:text-red-200"
+                                  aria-label={`Unequip ${slot}`}
+                                >
+                                  ×
+                                </button>
+                              ) : null}
                               <p className="m-0 font-semibold">{item ? item.name : slot}</p>
                               <p className="m-0 text-[var(--soft)]">
                                 {item ? `+${item.ac} AC` : 'Armor Slot'}
@@ -1079,6 +1627,19 @@ export default function Campaign() {
                                     {item.ac && (
                                       <p className="m-0 text-[var(--accent-2)]">+{item.ac} AC</p>
                                     )}
+                                    {(section === 'weapons' || section === 'armor') && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          section === 'weapons'
+                                            ? handleEquipWeapon(item)
+                                            : handleEquipArmor(item)
+                                        }
+                                        className="mt-1 rounded-full border border-[rgba(214,179,106,0.6)] px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)]"
+                                      >
+                                        Equip
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                                 <div className="mt-2 flex flex-wrap gap-2">
@@ -1093,6 +1654,20 @@ export default function Campaign() {
                                     <span className="rounded-full border border-white/20 px-2 py-0.5 text-[0.7rem] text-[var(--soft)]">
                                       {item.effect}
                                     </span>
+                                  )}
+                                  {section === 'consumables' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleUseConsumable(item)}
+                                      disabled={
+                                        (item.effect ?? '')
+                                          .toLowerCase()
+                                          .includes('health') && hpCurrent >= hpMax
+                                      }
+                                      className="rounded-full border border-emerald-400/50 px-2 py-0.5 text-[0.7rem] font-semibold text-emerald-200 transition hover:-translate-y-0.5 hover:border-emerald-300 disabled:cursor-not-allowed disabled:opacity-40"
+                                    >
+                                      Use
+                                    </button>
                                   )}
                                 </div>
                               </div>
@@ -1122,7 +1697,136 @@ export default function Campaign() {
                 </div>
               )}
 
-              {leftTab >= 5 && (
+              {leftTab === 5 && (
+                <div className="grid gap-3">
+                  {npcList.length === 0 && (
+                    <p className="m-0 text-sm text-[var(--soft)]">No NPCs recorded yet.</p>
+                  )}
+                  {npcList.map((npc) => {
+                    const safeValue = Number.isFinite(npc.reputation) ? npc.reputation : 0;
+                    const position = getRepPosition(safeValue);
+                    const fillLeft = safeValue >= 0 ? 50 : position;
+                    const fillWidth = (Math.abs(safeValue) / 20) * 50;
+                    const { label, tone } = getNpcDisposition(safeValue);
+                    const toneClass =
+                      tone === 'positive'
+                        ? 'border-emerald-400/40 text-emerald-200'
+                        : tone === 'negative'
+                          ? 'border-amber-500/40 text-amber-200'
+                          : tone === 'warning'
+                            ? 'border-orange-500/40 text-orange-200'
+                            : 'border-white/20 text-[var(--soft)]';
+                    return (
+                      <div
+                        key={npc.id ?? npc.name}
+                        className="grid gap-2 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="m-0 text-base font-semibold">{npc.name}</p>
+                            <p className="m-0 text-xs text-[var(--soft)]">{npc.role}</p>
+                          </div>
+                          <span className={`rounded-full border px-3 py-1 text-[0.7rem] uppercase tracking-[0.16em] ${toneClass}`}>
+                            {label}
+                          </span>
+                        </div>
+                        <p className="m-0 text-sm text-[var(--soft)]">{npc.summary}</p>
+                        <div className="text-xs text-[var(--soft)]">
+                          Last seen: <span className="text-[var(--ink)]">{npc.lastSeen ?? 'Unknown'}</span>
+                        </div>
+                        <div className="grid gap-2">
+                          <div className="flex items-center justify-between text-xs text-[var(--soft)]">
+                            <span>Reputation</span>
+                            <span>{safeValue > 0 ? `+${safeValue}` : safeValue}/20</span>
+                          </div>
+                          <div className="relative h-2 rounded-full bg-white/10">
+                            <div
+                              className="absolute top-0 h-2 rounded-full bg-[var(--accent)]"
+                              style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
+                            ></div>
+                            <div
+                              className="absolute -top-1 h-4 w-4 -translate-x-1/2 rounded-full border border-white/20 bg-[rgba(15,17,22,0.95)]"
+                              style={{ left: `${position}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {leftTab === 6 && (
+                <div className="grid gap-3">
+                  <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+                        Ossuary
+                      </h4>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[var(--soft)]">{ossuaryLoot.length} drops</span>
+                        <button
+                          type="button"
+                          onClick={handleClaimAllLoot}
+                          disabled={!ossuaryLoot.length}
+                          className="rounded-full border border-[rgba(214,179,106,0.6)] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Claim All
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {ossuaryLoot.length === 0 ? (
+                    <p className="m-0 text-sm text-[var(--soft)]">No drops to claim yet.</p>
+                  ) : (
+                    <div className="grid gap-3">
+                      {ossuaryLoot.map((item) => (
+                        <div
+                          key={item.id ?? item.name}
+                          className="grid gap-2 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="m-0 font-semibold">{item.name}</p>
+                              <p className="m-0 text-xs text-[var(--soft)]">{item.type}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[0.7rem] ${getRarityClass(
+                                  item.rarity
+                                )}`}
+                              >
+                                {item.rarity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleClaimLoot(item)}
+                                className="rounded-full border border-[rgba(214,179,106,0.6)] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)]"
+                              >
+                                Claim
+                              </button>
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-2 text-xs text-[var(--soft)]">
+                            {item.weaponType && <span>{item.weaponType}</span>}
+                            {item.damage && <span className="text-[var(--accent)]">{item.damage}</span>}
+                            {item.slot && <span>{item.slot}</span>}
+                            {item.ac && <span className="text-[var(--accent-2)]">+{item.ac} AC</span>}
+                            {item.effect && (
+                              <span className="rounded-full border border-white/20 px-2 py-0.5">
+                                {item.effect}
+                              </span>
+                            )}
+                          </div>
+                          {item.note && <p className="m-0 text-xs text-[var(--soft)]">{item.note}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {leftTab >= 7 && (
                 <div className="rounded-[14px] border border-white/10 bg-white/5 p-4 text-center text-sm text-[var(--soft)]">
                   Coming soon.
                 </div>
