@@ -108,8 +108,8 @@ const sampleInventoryData = {
       { id: 'arm-2', name: 'Twig Leggings', rarity: 'Common', slot: 'Legs', ac: 1 },
     ],
     consumables: [
-      { id: 'con-1', name: 'Pale Verdant Draught', rarity: 'Common', effect: 'Health' },
-      { id: 'con-2', name: 'Pale Wraith Essence', rarity: 'Uncommon', effect: 'Soul' },
+      { id: 'con-1', name: 'Pale Verdant Draught', rarity: 'Common', effect: 'Health', potency: '5 HP', heal: 5 },
+      { id: 'con-2', name: 'Pale Wraith Essence', rarity: 'Uncommon', effect: 'Soul', potency: '+1d4' },
     ],
     misc: [
       { id: 'misc-1', name: 'Tavern Crest Token', rarity: 'Common', note: 'Quest item' },
@@ -214,7 +214,18 @@ const sampleOssuary = [
     type: 'Consumable',
     rarity: 'Epic',
     effect: 'Soul',
+    potency: '+1d4',
     note: 'Swirls with trapped light.',
+  },
+  {
+    id: 'oss-5',
+    name: 'Sable Heart Draught',
+    type: 'Consumable',
+    rarity: 'Uncommon',
+    effect: 'Health',
+    potency: '5 HP',
+    heal: 5,
+    note: 'Restores vitality on use.',
   },
   {
     id: 'oss-4',
@@ -433,7 +444,9 @@ export default function Campaign() {
         setCampaign(null);
       } else {
         setCampaign(data);
-        setHpCurrent(data.hp_current ?? data.hp ?? 0);
+        const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
+        const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
+        setHpCurrent(currentHp);
         setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
         setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
         setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
@@ -474,7 +487,7 @@ export default function Campaign() {
 
   const statsByName = campaign?.stats ?? {};
   const reputationByName = campaign?.reputation ?? {};
-  const hpMax = campaign?.hp ?? 0;
+  const hpMax = campaign?.hp ?? 20;
   const npcList = useMemo(() => {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
@@ -819,6 +832,7 @@ export default function Campaign() {
 
   const buffFromConsumable = (item, healAmount) => {
     const effect = item.effect ?? item.name ?? 'Potion';
+    const potency = item.potency ? ` ${item.potency}` : '';
     if (effect.toLowerCase().includes('health')) {
       return {
         id: `buff-${Date.now()}`,
@@ -830,20 +844,20 @@ export default function Campaign() {
       return {
         id: `buff-${Date.now()}`,
         name: 'Strength',
-        detail: '+1d on next roll',
+        detail: `${potency || '+1d4'} on next roll`,
       };
     }
     if (effect.toLowerCase().includes('soul')) {
       return {
         id: `buff-${Date.now()}`,
         name: 'Soul',
-        detail: '+1d on next roll',
+        detail: `${potency || '+1d4'} on next roll`,
       };
     }
     return {
       id: `buff-${Date.now()}`,
       name: effect,
-      detail: 'Empowered for the next roll',
+      detail: potency ? `${potency} effect` : 'Empowered for the next roll',
     };
   };
 
@@ -852,7 +866,9 @@ export default function Campaign() {
     if (effect.toLowerCase().includes('health') && hpCurrent >= hpMax) {
       return;
     }
-    const healAmount = effect.toLowerCase().includes('health') ? Math.min(5, hpMax - hpCurrent) : 0;
+    const rawHeal = Number.isFinite(item.heal) ? item.heal : Number.parseInt(item.potency, 10);
+    const healValue = Number.isFinite(rawHeal) ? rawHeal : 5;
+    const healAmount = effect.toLowerCase().includes('health') ? Math.min(healValue, hpMax - hpCurrent) : 0;
     const nextHp = healAmount ? Math.min(hpMax, hpCurrent + healAmount) : hpCurrent;
     const nextConsumables = removeInventoryItem(inventoryData.sections.consumables, item);
     const nextInventory = normalizeInventory({
@@ -889,6 +905,8 @@ export default function Campaign() {
         slot: item.slot,
         ac: item.ac,
         effect: item.effect,
+        potency: item.potency,
+        heal: item.heal,
         note: item.note,
       };
       return {
@@ -1608,17 +1626,28 @@ export default function Campaign() {
                             {section}
                           </div>
                           <div className="grid gap-2">
-                            {inventoryData.sections[section].map((item) => (
-                              <div
-                                key={item.id}
-                                className="rounded-xl border border-white/10 bg-black/20 p-2 text-xs"
-                              >
-                                <div className="flex items-center justify-between gap-2">
+                            {inventoryData.sections[section].map((item) => {
+                              const potencyText = (() => {
+                                if (section !== 'consumables') return null;
+                                if (item.potency) return item.potency;
+                                const effect = item.effect?.toLowerCase() ?? '';
+                                if (effect.includes('health')) return '5 HP';
+                                if (effect.includes('strength') || effect.includes('soul')) return '+1d4';
+                                return null;
+                              })();
+                              const description =
+                                section === 'consumables'
+                                  ? item.note || item.effect || 'Consumable'
+                                  : item.weaponType || item.slot || item.note || item.effect || 'Item';
+                              return (
+                                <div
+                                  key={item.id}
+                                  className="rounded-xl border border-white/10 bg-black/20 p-2 text-xs"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
                                   <div>
                                     <p className="m-0 font-semibold">{item.name}</p>
-                                    <p className="m-0 text-[var(--soft)]">
-                                      {item.weaponType || item.slot || item.note || item.effect || 'Item'}
-                                    </p>
+                                    <p className="m-0 text-[var(--soft)]">{description}</p>
                                   </div>
                                   <div className="text-right">
                                     {item.damage && (
@@ -1626,6 +1655,17 @@ export default function Campaign() {
                                     )}
                                     {item.ac && (
                                       <p className="m-0 text-[var(--accent-2)]">+{item.ac} AC</p>
+                                    )}
+                                    {section === 'consumables' && potencyText && (
+                                      <p
+                                        className={`m-0 ${
+                                          item.effect?.toLowerCase().includes('health')
+                                            ? 'text-red-300'
+                                            : 'text-[var(--accent)]'
+                                        }`}
+                                      >
+                                        {potencyText}
+                                      </p>
                                     )}
                                     {(section === 'weapons' || section === 'armor') && (
                                       <button
@@ -1651,7 +1691,13 @@ export default function Campaign() {
                                     {item.rarity}
                                   </span>
                                   {item.effect && (
-                                    <span className="rounded-full border border-white/20 px-2 py-0.5 text-[0.7rem] text-[var(--soft)]">
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[0.7rem] ${
+                                        item.effect.toLowerCase().includes('health')
+                                          ? 'border-red-500/40 text-red-300'
+                                          : 'border-white/20 text-[var(--soft)]'
+                                      }`}
+                                    >
                                       {item.effect}
                                     </span>
                                   )}
@@ -1671,7 +1717,8 @@ export default function Campaign() {
                                   )}
                                 </div>
                               </div>
-                            ))}
+                            );
+                          })}
                           </div>
                         </div>
                       ))}
@@ -1807,15 +1854,40 @@ export default function Campaign() {
                               </button>
                             </div>
                           </div>
-                          <div className="flex flex-wrap gap-2 text-xs text-[var(--soft)]">
-                            {item.weaponType && <span>{item.weaponType}</span>}
-                            {item.damage && <span className="text-[var(--accent)]">{item.damage}</span>}
-                            {item.slot && <span>{item.slot}</span>}
-                            {item.ac && <span className="text-[var(--accent-2)]">+{item.ac} AC</span>}
-                            {item.effect && (
-                              <span className="rounded-full border border-white/20 px-2 py-0.5">
-                                {item.effect}
-                              </span>
+                          <div className="flex flex-wrap items-center gap-2 text-sm text-[var(--soft)]">
+                            {item.type === 'Consumable' ? (
+                              (() => {
+                                const potency =
+                                  item.potency ||
+                                  (item.effect?.toLowerCase().includes('health')
+                                    ? '5 HP'
+                                    : item.effect
+                                      ? '+1d4'
+                                      : null);
+                                return (
+                                  <>
+                                    <span>{item.effect ?? 'Consumable'}</span>
+                                    {potency && (
+                                      <span
+                                        className={
+                                          item.effect?.toLowerCase().includes('health')
+                                            ? 'text-red-300'
+                                            : 'text-[var(--accent)]'
+                                        }
+                                      >
+                                        {potency}
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              })()
+                            ) : (
+                              <>
+                                {item.weaponType && <span>{item.weaponType}</span>}
+                                {item.damage && <span className="text-[var(--accent)]">{item.damage}</span>}
+                                {item.slot && <span>{item.slot}</span>}
+                                {item.ac && <span className="text-[var(--accent-2)]">+{item.ac} AC</span>}
+                              </>
                             )}
                           </div>
                           {item.note && <p className="m-0 text-xs text-[var(--soft)]">{item.note}</p>}
