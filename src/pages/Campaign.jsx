@@ -1222,17 +1222,16 @@ export default function Campaign() {
               {leftTab === 2 && (
                 <div className="grid gap-3 text-sm">
                   <div className="rounded-[14px] border border-white/10 bg-white/5 p-3">
-                    <div className="flex items-center justify-between gap-2 text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                    <div className="flex items-start justify-between gap-2 text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
                       <span>Player Info</span>
-                      <span>HP {hpCurrent}/{hpMax}</span>
+                      <div className="grid justify-items-end gap-1">
+                        <span className="text-red-300">HP {hpCurrent}/{hpMax}</span>
+                        <span className="text-sky-300/70">Lvl 1 • 0/15</span>
+                      </div>
                     </div>
                     <div className="mt-3">
-                      <div className="flex items-center justify-between text-xs text-[var(--soft)]">
-                        <span>Lvl 1</span>
-                        <span>0/15</span>
-                      </div>
                       <div className="mt-1 h-1.5 rounded-full bg-white/10">
-                        <div className="h-1.5 w-[0%] rounded-full bg-[var(--accent-2)]"></div>
+                        <div className="h-1.5 w-[0%] rounded-full bg-sky-300/40"></div>
                       </div>
                     </div>
                     <div className="mt-3">
