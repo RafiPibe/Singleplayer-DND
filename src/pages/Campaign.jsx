@@ -202,128 +202,165 @@ export default function Campaign() {
   };
 
   return (
-    <div className="page">
+    <div className="relative min-h-screen">
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <main className="campaign-shell">
-        <aside className="sidebar">
-          <div className="panel panel-tight">
-            <div className="panel-header">
+      <main className="relative z-10 grid gap-6 px-[5vw] pt-6 pb-12 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]">
+        <aside className="grid gap-[18px]">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <div className="mb-5 flex flex-wrap items-baseline justify-between gap-4">
               <div>
-                <h2>{campaign?.name ?? 'Campaign'}</h2>
-                <p className="subtle">{campaign?.class_name ?? 'Loading...'}</p>
+                <h2 className="text-[clamp(1.4rem,2vw,2rem)]">{campaign?.name ?? 'Campaign'}</h2>
+                <p className="m-0 text-sm text-[var(--soft)]">
+                  {campaign?.class_name ?? 'Loading...'}
+                </p>
               </div>
-              <Link className="btn ghost" to="/">
+              <Link
+                className="rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                to="/"
+              >
                 Back
               </Link>
             </div>
-            {loading && <p className="subtle">Loading campaign...</p>}
-            {error && <p className="error">{error}</p>}
+            {loading && <p className="m-0 text-sm text-[var(--soft)]">Loading campaign...</p>}
+            {error && <p className="m-0 font-semibold text-[var(--danger)]">{error}</p>}
           </div>
 
-          <div className="panel panel-tight">
-            <h3>Quest Log</h3>
-            <div className="tag-row">
-              <span className="tag active">Quests ({questLog.length})</span>
-              <span className="tag">Bounties ({bounties.length})</span>
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Quest Log</h3>
+            <div className="my-3 flex gap-2">
+              <span className="rounded-full border border-[rgba(214,179,106,0.6)] px-2.5 py-1 text-xs text-[var(--accent)]">
+                Quests ({questLog.length})
+              </span>
+              <span className="rounded-full border border-white/20 px-2.5 py-1 text-xs text-[var(--soft)]">
+                Bounties ({bounties.length})
+              </span>
             </div>
-            <div className="stack">
+            <div className="grid gap-3">
               {questLog.map((quest) => (
-                <div key={quest.id} className="mini-card">
-                  <div className="mini-title">
+                <div
+                  key={quest.id}
+                  className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex justify-between gap-2 font-semibold">
                     <span>{quest.title}</span>
-                    <span className="pill">{quest.status}</span>
+                    <span className="rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
+                      {quest.status}
+                    </span>
                   </div>
-                  <p className="subtle">{quest.description}</p>
-                  <span className="xp">{quest.xp} XP</span>
+                  <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
+                  <span className="text-sm font-semibold text-[var(--accent)]">{quest.xp} XP</span>
                 </div>
               ))}
             </div>
-            <div className="input-row">
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-2.5">
               <input
+                className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                 type="text"
                 value={questInput}
                 onChange={(event) => setQuestInput(event.target.value)}
                 placeholder="Add a new quest..."
               />
-              <button className="btn ghost" type="button" onClick={handleAddQuest}>
+              <button
+                className="rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                type="button"
+                onClick={handleAddQuest}
+              >
                 Add
               </button>
             </div>
           </div>
 
-          <div className="panel panel-tight">
-            <h3>Bounties</h3>
-            <div className="stack">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Bounties</h3>
+            <div className="grid gap-3">
               {bounties.map((bounty) => (
-                <div key={bounty.id} className="mini-card">
-                  <div className="mini-title">
+                <div
+                  key={bounty.id}
+                  className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex justify-between gap-2 font-semibold">
                     <span>{bounty.title}</span>
-                    <span className="pill">{bounty.status}</span>
+                    <span className="rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
+                      {bounty.status}
+                    </span>
                   </div>
-                  <p className="subtle">Reward: {bounty.reward}</p>
+                  <p className="m-0 text-sm text-[var(--soft)]">Reward: {bounty.reward}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="panel panel-tight">
-            <h3>Inventory</h3>
-            <div className="stack">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Inventory</h3>
+            <div className="grid gap-3">
               {inventory.map((item) => (
-                <div key={item.id} className="mini-card">
-                  <div className="mini-title">
+                <div
+                  key={item.id}
+                  className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex justify-between gap-2 font-semibold">
                     <span>
                       {item.name} x{item.qty}
                     </span>
                   </div>
-                  <p className="subtle">{item.note}</p>
+                  <p className="m-0 text-sm text-[var(--soft)]">{item.note}</p>
                 </div>
               ))}
             </div>
-            <div className="input-row">
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-2.5">
               <input
+                className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                 type="text"
                 value={inventoryInput}
                 onChange={(event) => setInventoryInput(event.target.value)}
                 placeholder="Add inventory item..."
               />
-              <button className="btn ghost" type="button" onClick={handleAddInventory}>
+              <button
+                className="rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                type="button"
+                onClick={handleAddInventory}
+              >
                 Add
               </button>
             </div>
           </div>
 
-          <div className="panel panel-tight">
-            <h3>NPC Relationships</h3>
-            <div className="stack">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">NPC Relationships</h3>
+            <div className="grid gap-3">
               {relationships.map((npc) => (
-                <div key={npc.id} className="mini-card">
-                  <div className="mini-title">
+                <div
+                  key={npc.id}
+                  className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex justify-between gap-2 font-semibold">
                     <span>{npc.name}</span>
-                    <span className="pill">{npc.status}</span>
+                    <span className="rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
+                      {npc.status}
+                    </span>
                   </div>
-                  <p className="subtle">{npc.note}</p>
+                  <p className="m-0 text-sm text-[var(--soft)]">{npc.note}</p>
                 </div>
               ))}
             </div>
           </div>
 
-          <div className="panel panel-tight">
-            <h3>Stats</h3>
-            <div className="stat-grid">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-[18px] shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Stats</h3>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
               {statEntries.map(([stat, value]) => (
-                <div className="stat" key={stat}>
+                <div className="flex justify-between text-sm" key={stat}>
                   <span>{stat}</span>
                   <span style={getValueStyle(value, 5)}>{value}</span>
                 </div>
               ))}
             </div>
-            <h4 className="section-title">Reputation</h4>
-            <div className="stat-grid">
+            <h4 className="mt-4 mb-2.5 text-sm">Reputation</h4>
+            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
               {repEntries.map(([rep, value]) => (
-                <div className="stat" key={rep}>
+                <div className="flex justify-between text-sm" key={rep}>
                   <span>{rep}</span>
                   <span style={getValueStyle(value, 20)}>{value}</span>
                 </div>
@@ -332,97 +369,128 @@ export default function Campaign() {
           </div>
         </aside>
 
-        <section className="chat-panel">
-          <header className="chat-header">
+        <section className="grid min-h-[70vh] grid-rows-[auto_1fr_auto] gap-4">
+          <header className="flex items-center justify-between gap-4">
             <div>
-              <h2>Campaign Narration</h2>
-              <p className="subtle">{campaign?.name ? `Now playing | ${campaign.name}` : 'Awaiting adventurer'}</p>
+              <h2 className="text-[clamp(1.4rem,2vw,2rem)]">Campaign Narration</h2>
+              <p className="m-0 text-sm text-[var(--soft)]">
+                {campaign?.name ? `Now playing | ${campaign.name}` : 'Awaiting adventurer'}
+              </p>
             </div>
-            <div className="status-pill">Live Session</div>
+            <div className="rounded-full border border-[rgba(214,179,106,0.6)] px-3 py-1 text-[0.75rem] uppercase tracking-[0.12em]">
+              Live Session
+            </div>
           </header>
 
-          <div className="chat-body">
+          <div className="grid max-h-[70vh] gap-3 overflow-y-auto rounded-2xl border border-white/10 bg-[rgba(7,9,14,0.7)] p-4">
             {messages.map((message) => (
-              <div key={message.id} className="chat-message">
-                <div className="message-meta">
-                  <span className="name-highlight">{message.sender}</span>
-                  <span className="location">{message.location}</span>
+              <div key={message.id} className="grid gap-2 rounded-2xl bg-white/5 p-4">
+                <div className="grid gap-1">
+                  <span className="font-bold tracking-[0.02em] text-[var(--accent)]">
+                    {message.sender}
+                  </span>
+                  <span className="text-sm text-[var(--soft)]">{message.location}</span>
                 </div>
-                <p>{message.content}</p>
+                <p className="m-0">{message.content}</p>
               </div>
             ))}
           </div>
 
-          <form className="chat-input" onSubmit={handleSendMessage}>
+          <form className="grid grid-cols-[1fr_auto] items-center gap-3" onSubmit={handleSendMessage}>
             <input
+              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
               type="text"
               value={messageInput}
               onChange={(event) => setMessageInput(event.target.value)}
               placeholder="Describe your next move..."
             />
-            <button className="btn primary" type="submit">
+            <button
+              className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5"
+              type="submit"
+            >
               Send
             </button>
           </form>
         </section>
 
-        <aside className="support-panel">
-          <div className="panel">
-            <h3>Character Card</h3>
+        <aside className="grid gap-[18px]">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Character Card</h3>
             {campaign ? (
-              <div className="stack">
-                <p className="subtle">{campaign.class_name}</p>
-                <p><strong>HP:</strong> {campaign.hp}</p>
-                <p><strong>Backstory:</strong> {campaign.backstory}</p>
+              <div className="grid gap-3">
+                <p className="m-0 text-sm text-[var(--soft)]">{campaign.class_name}</p>
+                <p className="m-0">
+                  <strong>HP:</strong> {campaign.hp}
+                </p>
+                <p className="m-0">
+                  <strong>Backstory:</strong> {campaign.backstory}
+                </p>
               </div>
             ) : (
-              <p className="subtle">Loading character...</p>
+              <p className="m-0 text-sm text-[var(--soft)]">Loading character...</p>
             )}
           </div>
 
-          <div className="panel">
-            <h3>Journal</h3>
-            <div className="stack">
-              {journal.length === 0 && <p className="subtle">No journal entries yet.</p>}
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Journal</h3>
+            <div className="grid gap-3">
+              {journal.length === 0 && (
+                <p className="m-0 text-sm text-[var(--soft)]">No journal entries yet.</p>
+              )}
               {journal.map((entry) => (
-                <div key={entry.id} className="mini-card">
-                  <div className="mini-title">
+                <div
+                  key={entry.id}
+                  className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                >
+                  <div className="flex justify-between gap-2 font-semibold">
                     <span>{entry.date}</span>
                   </div>
-                  <p className="subtle">{entry.text}</p>
+                  <p className="m-0 text-sm text-[var(--soft)]">{entry.text}</p>
                 </div>
               ))}
             </div>
-            <div className="input-row">
+            <div className="mt-3 grid grid-cols-[1fr_auto] gap-2.5">
               <input
+                className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                 type="text"
                 value={journalInput}
                 onChange={(event) => setJournalInput(event.target.value)}
                 placeholder="Add journal entry..."
               />
-              <button className="btn ghost" type="button" onClick={handleAddJournal}>
+              <button
+                className="rounded-full border border-white/20 bg-transparent px-4 py-2 text-sm font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                type="button"
+                onClick={handleAddJournal}
+              >
                 Add
               </button>
             </div>
           </div>
 
-          <div className="panel">
-            <h3>Dice Tray</h3>
-            <div className="dice-grid">
+          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <h3 className="text-lg">Dice Tray</h3>
+            <div className="my-4 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-2.5">
               {[4, 6, 8, 10, 12, 20, 100].map((sides) => (
-                <button key={sides} className="dice" onClick={() => rollDice(sides)} type="button">
+                <button
+                  key={sides}
+                  className="rounded-xl border border-white/20 bg-white/10 p-3 font-bold text-[var(--ink)] transition hover:-translate-y-0.5"
+                  onClick={() => rollDice(sides)}
+                  type="button"
+                >
                   d{sides}
                 </button>
               ))}
             </div>
-            <div className="roll-log">
+            <div className="grid max-h-[200px] gap-2 overflow-y-auto pr-2">
               {rolls.map((roll) => (
-                <div className="roll" key={roll.id}>
+                <div className="flex justify-between rounded-xl bg-white/5 px-3 py-2 text-sm" key={roll.id}>
                   <span>d{roll.sides}</span>
                   <span>{roll.result}</span>
                 </div>
               ))}
-              {rolls.length === 0 && <p className="subtle">Roll a die to log results here.</p>}
+              {rolls.length === 0 && (
+                <p className="m-0 text-sm text-[var(--soft)]">Roll a die to log results here.</p>
+              )}
             </div>
           </div>
         </aside>

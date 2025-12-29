@@ -295,7 +295,15 @@ export default function Create() {
 
   const handleKeyDown = (event) => {
     if (event.key !== 'Enter') return;
-    if (event.target.tagName === 'TEXTAREA') return;
+    if (event.target.tagName === 'TEXTAREA') {
+      if (step === 2 && !event.shiftKey) {
+        event.preventDefault();
+        if (step < TOTAL_STEPS) {
+          nextStep();
+        }
+      }
+      return;
+    }
     event.preventDefault();
     if (step < TOTAL_STEPS) {
       nextStep();
@@ -303,23 +311,28 @@ export default function Create() {
   };
 
   return (
-    <div className="page">
+    <div className="relative min-h-screen">
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <header className="page-topbar">
-        <Link className="brand" to="/">Pibe's Tavern</Link>
+      <header className="sticky top-0 z-20 flex items-center justify-between bg-gradient-to-b from-[#050607]/95 to-[#050607]/0 px-[6vw] pt-7 pb-2 backdrop-blur">
+        <Link
+          className="font-['Cinzel'] text-sm font-bold uppercase tracking-[0.16em] text-[var(--accent-2)]"
+          to="/"
+        >
+          Pibe's Tavern
+        </Link>
       </header>
 
-      <main className="content create-layout">
-        <section className="builder create-panel">
-          <div className="create-header" aria-hidden="true"></div>
+      <main className="relative z-10 grid min-h-screen place-items-center gap-4 px-[6vw] pb-24">
+        <section className="grid w-full max-w-[1120px] gap-4 pt-[18px] animate-[float-in_0.5s_ease]">
 
           <form onSubmit={handleSubmit} onKeyDown={handleKeyDown}>
             {step === 1 && (
-              <label className="field center-field">
-                <span>What is your character name?</span>
+              <label className="mb-5 grid gap-2.5 text-center">
+                <span className="font-['Cinzel'] text-[1.5rem]">What is your character name?</span>
                 <input
+                  className="min-w-[min(520px,90vw)] border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
                   type="text"
                   value={name}
                   onChange={(event) => setName(event.target.value)}
@@ -331,9 +344,12 @@ export default function Create() {
 
             {step === 2 && (
               <>
-                <label className="field center-field">
-                  <span>What does your character look like?</span>
+                <label className="mb-5 grid gap-2.5 text-center">
+                  <span className="font-['Cinzel'] text-[1.5rem]">
+                    What does your character look like?
+                  </span>
                   <textarea
+                    className="min-w-[min(520px,90vw)] resize-none border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
                     rows={4}
                     value={look}
                     onChange={(event) => setLook(event.target.value)}
@@ -341,22 +357,34 @@ export default function Create() {
                     required
                   />
                 </label>
-                <div className="field center-field">
-                  <span>Gender</span>
-                  <div className="gender-buttons">
-                    {['Male', 'Female', 'Custom'].map((option) => (
-                      <button
-                        key={option}
-                        type="button"
-                        className={`btn ghost ${gender === option ? 'active' : ''}`}
-                        onClick={() => setGender(option)}
-                      >
-                        {option}
-                      </button>
-                    ))}
+                <div className="mb-5 grid gap-2.5 text-center">
+                  <span className="font-['Cinzel'] text-[1.5rem]">Gender</span>
+                  <div className="mt-2 flex flex-wrap justify-center gap-3">
+                    {['Male', 'Female', 'Custom'].map((option) => {
+                      const isActive = gender === option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          className={`rounded-full border bg-transparent px-5 py-2 text-sm font-semibold transition hover:-translate-y-0.5 ${
+                            isActive
+                              ? 'border-[rgba(214,179,106,0.7)] text-[var(--accent)]'
+                              : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                          }`}
+                          onClick={() => setGender(option)}
+                        >
+                          {option}
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className={`gender-custom ${gender === 'Custom' ? 'open' : ''}`}>
+                  <div
+                    className={`mt-3 overflow-hidden transition-[max-height,opacity] duration-300 ${
+                      gender === 'Custom' ? 'max-h-20 opacity-100' : 'max-h-0 opacity-0'
+                    }`}
+                  >
                     <input
+                      className="min-w-[min(520px,90vw)] border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
                       type="text"
                       value={genderCustom}
                       onChange={(event) => setGenderCustom(event.target.value)}
@@ -371,42 +399,58 @@ export default function Create() {
 
             {step === 3 && (
               <>
-                <div className="field center-field">
-                  <span>What is your character's class?</span>
+                <div className="mb-4 grid gap-2.5 text-center">
+                  <span className="font-['Cinzel'] text-[1.5rem]">
+                    What is your character's class?
+                  </span>
                 </div>
-                <div className="class-layout">
-                  <div className="class-grid">
-                    {classOptions.map((cls) => (
-                      <button
-                        key={cls.name}
-                        type="button"
-                        className={`class-card ${selectedClass === cls.name ? 'active' : ''}`}
-                        onClick={() => setSelectedClass(cls.name)}
-                      >
-                        <div className="class-card-header">
-                          <div className="class-title">{cls.nickname ?? cls.name}</div>
-                          <div className="class-pill-group">
-                            <span className="class-pill role-pill">{cls.role ?? 'Class'}</span>
+                <div className="grid gap-4 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(560px,1.4fr)_minmax(420px,1fr)]">
+                  <div className="grid gap-3 min-[801px]:grid-cols-2">
+                    {classOptions.map((cls) => {
+                      const isActive = selectedClass === cls.name;
+                      return (
+                        <button
+                          key={cls.name}
+                          type="button"
+                          className={`rounded-[14px] border bg-white/5 p-3 text-left transition hover:-translate-y-0.5 ${
+                            isActive
+                              ? 'border-[rgba(214,179,106,0.6)] -translate-y-0.5'
+                              : 'border-white/10'
+                          }`}
+                          onClick={() => setSelectedClass(cls.name)}
+                        >
+                          <div className="flex items-start justify-between gap-2.5">
+                            <div className="mb-0.5 font-['Cinzel'] text-[0.9rem] uppercase tracking-[0.04em]">
+                              {cls.nickname ?? cls.name}
+                            </div>
+                            <div className="flex flex-wrap justify-end gap-1.5">
+                              <span className="whitespace-nowrap rounded-full border border-[rgba(214,179,106,0.5)] px-2.5 py-1 text-[0.72rem] text-[var(--accent)]">
+                                {cls.role ?? 'Class'}
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <p>{cls.description}</p>
-                      </button>
-                    ))}
+                          <p className="m-0 text-[0.85rem] leading-tight text-[var(--soft)] line-clamp-2">
+                            {cls.description}
+                          </p>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <div className="class-details">
+                  <div className="min-h-full rounded-2xl border border-white/10 bg-white/5 p-4">
                     {currentClassDetails ? (
                       <>
                         {selectedClass === CUSTOM_CLASS.name ? (
-                          <div className="custom-class-form">
-                            <div className="class-details-header">
-                              <h3>{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
-                              <span className="class-pill role-pill">
+                          <div className="grid gap-3">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <h3 className="text-lg">{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
+                              <span className="whitespace-nowrap rounded-full border border-[rgba(214,179,106,0.5)] px-2.5 py-1 text-[0.72rem] text-[var(--accent)]">
                                 {currentClassDetails.role ?? 'Class'}
                               </span>
                             </div>
-                            <label className="field">
-                              <span>Nickname</span>
+                            <label className="mb-3.5 grid gap-2.5">
+                              <span className="font-semibold">Nickname</span>
                               <input
+                                className="rounded-xl border border-white/20 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                                 type="text"
                                 value={customNickname}
                                 onChange={(event) => setCustomNickname(event.target.value)}
@@ -414,9 +458,10 @@ export default function Create() {
                                 placeholder="e.g., Silver Tongue"
                               />
                             </label>
-                            <label className="field">
-                              <span>Class name</span>
+                            <label className="mb-3.5 grid gap-2.5">
+                              <span className="font-semibold">Class name</span>
                               <input
+                                className="rounded-xl border border-white/20 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                                 type="text"
                                 value={customClassName}
                                 onChange={(event) => setCustomClassName(event.target.value)}
@@ -424,33 +469,42 @@ export default function Create() {
                                 placeholder="e.g., Bard"
                               />
                             </label>
-                            <label className="field">
-                              <span>Description</span>
+                            <label className="mb-3.5 grid gap-2.5">
+                              <span className="font-semibold">Description</span>
                               <textarea
+                                className="rounded-xl border border-white/20 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
                                 rows={3}
                                 value={customDescription}
                                 onChange={(event) => setCustomDescription(event.target.value)}
                                 maxLength={200}
                               />
                             </label>
-                            <div className="detail-card">
-                              <div className="detail-card-header">
+                            <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+                              <div className="mb-1.5 flex items-center justify-between gap-3">
                                 <strong>Starting HP</strong>
-                                <button type="button" className="btn ghost" onClick={rerollHp}>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                  onClick={rerollHp}
+                                >
                                   Reroll
                                 </button>
                               </div>
-                              <p>{currentClassDetails.hp}</p>
+                              <p className="m-0 text-lg">{currentClassDetails.hp}</p>
                             </div>
-                            <div className="custom-stats-header">
-                              <h4>Starting Stats</h4>
-                              <button type="button" className="btn ghost" onClick={rollAllStats}>
+                            <div className="mt-1.5 flex items-center justify-between gap-3">
+                              <h4 className="text-sm">Starting Stats</h4>
+                              <button
+                                type="button"
+                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                onClick={rollAllStats}
+                              >
                                 Roll all
                               </button>
                             </div>
-                            <div className="stat-grid custom-stat-grid">
+                            <div className="grid grid-cols-1 gap-x-3 gap-y-2 min-[801px]:grid-cols-2">
                               {STATS.map((stat) => (
-                                <div className="stat" key={stat}>
+                                <div className="flex justify-between text-sm" key={stat}>
                                   <span>{stat}</span>
                                   <span style={getValueStyle(customStats[stat], 5)}>
                                     {customStats[stat]}
@@ -458,15 +512,19 @@ export default function Create() {
                                 </div>
                               ))}
                             </div>
-                            <div className="custom-stats-header">
-                              <h4>Starting Reputation</h4>
-                              <button type="button" className="btn ghost" onClick={rollAllReputation}>
+                            <div className="mt-1.5 flex items-center justify-between gap-3">
+                              <h4 className="text-sm">Starting Reputation</h4>
+                              <button
+                                type="button"
+                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                onClick={rollAllReputation}
+                              >
                                 Roll all
                               </button>
                             </div>
-                            <div className="stat-grid custom-stat-grid">
+                            <div className="grid grid-cols-1 gap-x-3 gap-y-2 min-[801px]:grid-cols-2">
                               {REPUTATION.map((rep) => (
-                                <div className="stat" key={rep}>
+                                <div className="flex justify-between text-sm" key={rep}>
                                   <span>{rep}</span>
                                   <span style={getValueStyle(customReputation[rep], 20)}>
                                     {customReputation[rep]}
@@ -477,31 +535,39 @@ export default function Create() {
                           </div>
                         ) : (
                           <>
-                            <div className="class-details-header">
-                              <h3>{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
-                              <span className="class-pill role-pill">
+                            <div className="flex flex-wrap items-center gap-2.5">
+                              <h3 className="text-lg">{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
+                              <span className="whitespace-nowrap rounded-full border border-[rgba(214,179,106,0.5)] px-2.5 py-1 text-[0.72rem] text-[var(--accent)]">
                                 {currentClassDetails.role ?? 'Class'}
                               </span>
                             </div>
-                            <p className="subtle">{currentClassDetails.description}</p>
-                            <div className="detail-card">
-                              <div className="detail-card-header">
+                            <p className="m-0 text-sm text-[var(--soft)]">{currentClassDetails.description}</p>
+                            <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+                              <div className="mb-1.5 flex items-center justify-between gap-3">
                                 <strong>Starting HP</strong>
-                                <button type="button" className="btn ghost" onClick={rerollHp}>
+                                <button
+                                  type="button"
+                                  className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                  onClick={rerollHp}
+                                >
                                   Reroll
                                 </button>
                               </div>
-                              <p>{currentClassDetails.hp}</p>
+                              <p className="m-0 text-lg">{currentClassDetails.hp}</p>
                             </div>
-                            <div className="custom-stats-header">
-                              <h4>Starting Stats</h4>
-                              <button type="button" className="btn ghost" onClick={rollClassStats}>
+                            <div className="mt-1.5 flex items-center justify-between gap-3">
+                              <h4 className="text-sm">Starting Stats</h4>
+                              <button
+                                type="button"
+                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                onClick={rollClassStats}
+                              >
                                 Roll all
                               </button>
                             </div>
-                            <div className="stat-grid">
+                            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
                               {STATS.map((stat) => (
-                                <div className="stat" key={stat}>
+                                <div className="flex justify-between text-sm" key={stat}>
                                   <span>{stat}</span>
                                   <span style={getValueStyle(currentClassDetails.stats[stat], 5)}>
                                     {currentClassDetails.stats[stat]}
@@ -509,19 +575,19 @@ export default function Create() {
                                 </div>
                               ))}
                             </div>
-                            <div className="custom-stats-header">
-                              <h4>Starting Reputation</h4>
+                            <div className="mt-1.5 flex items-center justify-between gap-3">
+                              <h4 className="text-sm">Starting Reputation</h4>
                               <button
                                 type="button"
-                                className="btn ghost"
+                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
                                 onClick={rollClassReputation}
                               >
                                 Roll all
                               </button>
                             </div>
-                            <div className="stat-grid">
+                            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
                               {REPUTATION.map((rep) => (
-                                <div className="stat" key={rep}>
+                                <div className="flex justify-between text-sm" key={rep}>
                                   <span>{rep}</span>
                                   <span style={getValueStyle(currentClassDetails.reputation[rep], 20)}>
                                     {currentClassDetails.reputation[rep]}
@@ -534,8 +600,10 @@ export default function Create() {
                       </>
                     ) : (
                       <>
-                        <h3>Class details</h3>
-                        <p className="subtle">Select a class to see its stats, HP, and reputation.</p>
+                        <h3 className="text-lg">Class details</h3>
+                        <p className="m-0 text-sm text-[var(--soft)]">
+                          Select a class to see its stats, HP, and reputation.
+                        </p>
                       </>
                     )}
                   </div>
@@ -544,9 +612,10 @@ export default function Create() {
             )}
 
             {step === 4 && (
-              <label className="field center-field">
-                <span>Tell us your backstory</span>
+              <label className="mb-5 grid gap-2.5 text-center">
+                <span className="font-['Cinzel'] text-[1.5rem]">Tell us your backstory</span>
                 <textarea
+                  className="min-w-[min(520px,90vw)] resize-none border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
                   rows={5}
                   value={backstory}
                   onChange={(event) => setBackstory(event.target.value)}
@@ -555,10 +624,10 @@ export default function Create() {
               </label>
             )}
 
-            <div className="chevron-nav">
+            <div className="pointer-events-none fixed inset-0 z-20 flex items-center justify-between px-6">
               <button
                 type="button"
-                className="chevron-btn"
+                className="pointer-events-auto h-11 w-11 rounded-full border border-white/20 bg-[rgba(5,6,7,0.55)] text-lg font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.8)] hover:shadow-[0_0_14px_rgba(214,179,106,0.35)] disabled:cursor-default disabled:opacity-40 disabled:shadow-none disabled:translate-y-0"
                 onClick={prevStep}
                 disabled={step === 1}
                 aria-label="Previous step"
@@ -567,7 +636,7 @@ export default function Create() {
               </button>
               <button
                 type={step === TOTAL_STEPS ? 'submit' : 'button'}
-                className="chevron-btn"
+                className="pointer-events-auto h-11 w-11 rounded-full border border-white/20 bg-[rgba(5,6,7,0.55)] text-lg font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.8)] hover:shadow-[0_0_14px_rgba(214,179,106,0.35)] disabled:cursor-default disabled:opacity-40 disabled:shadow-none disabled:translate-y-0"
                 onClick={step < TOTAL_STEPS ? nextStep : undefined}
                 disabled={step === TOTAL_STEPS && saving}
                 aria-label="Next step"
@@ -577,15 +646,19 @@ export default function Create() {
             </div>
 
             {step === TOTAL_STEPS && (
-              <div className="builder-actions center-actions">
-                <button type="submit" className="btn primary" disabled={saving}>
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="submit"
+                  className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5 disabled:cursor-default disabled:opacity-70"
+                  disabled={saving}
+                >
                   {saving ? 'Saving...' : 'Create Campaign'}
                 </button>
               </div>
             )}
-            {error && <p className="error error-inline">{error}</p>}
+            {error && <p className="mt-3 text-center font-semibold text-[var(--danger)]">{error}</p>}
 
-            <div className="stepper">
+            <div className="fixed bottom-0 left-0 right-0 z-20 flex flex-wrap justify-center gap-4 border-t border-white/10 bg-[rgba(5,6,7,0.78)] px-[6vw] py-4 backdrop-blur">
               {['Name', 'Looks', 'Class', 'Backstory'].map((label, index) => {
                 const stepNumber = index + 1;
                 const isActive = step === stepNumber;
@@ -595,7 +668,9 @@ export default function Create() {
                   <button
                     key={label}
                     type="button"
-                    className={`stepper-item ${isActive ? 'active' : ''} ${isCompleted ? 'completed' : ''}`}
+                    className={`group relative z-10 flex items-center gap-2 bg-transparent px-1.5 py-1 text-[0.85rem] tracking-[0.04em] transition ${
+                      isActive || isCompleted ? 'text-[var(--accent)]' : 'text-[var(--soft)]'
+                    } enabled:hover:text-[var(--accent)] disabled:cursor-default disabled:opacity-50`}
                     onClick={() => {
                       if (!canJump) return;
                       setError('');
@@ -603,8 +678,18 @@ export default function Create() {
                     }}
                     disabled={!canJump}
                   >
-                    <span className="stepper-circle">{stepNumber}</span>
-                    <span className="stepper-label">{label}</span>
+                    <span
+                      className={`grid h-[26px] w-[26px] place-items-center rounded-full border bg-[var(--bg)] text-xs font-semibold transition group-hover:border-[rgba(214,179,106,0.9)] group-hover:shadow-[0_0_12px_rgba(214,179,106,0.45)] ${
+                        isActive
+                          ? 'border-[rgba(214,179,106,0.7)] text-[var(--accent)]'
+                          : isCompleted
+                            ? 'border-[rgba(214,179,106,0.5)] text-[var(--accent)]'
+                            : 'border-white/20'
+                      }`}
+                    >
+                      {stepNumber}
+                    </span>
+                    <span>{label}</span>
                   </button>
                 );
               })}
