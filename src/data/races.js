@@ -160,8 +160,18 @@ export const RACES = [
     name: 'Custom',
     choices: [
       {
-        label: '+3 Any',
-        amount: 3,
+        label: '+1 Any',
+        amount: 1,
+        options: ABILITIES,
+      },
+      {
+        label: '+1 Any',
+        amount: 1,
+        options: ABILITIES,
+      },
+      {
+        label: '+1 Any',
+        amount: 1,
         options: ABILITIES,
       },
     ],

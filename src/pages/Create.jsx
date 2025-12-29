@@ -841,7 +841,7 @@ export default function Create() {
                           </>
                         )}
 
-                        <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+                        <div className="mt-4 rounded-[14px] border border-white/10 bg-white/5 p-4">
                           <div className="mb-1.5 flex items-center justify-between gap-3">
                             <strong>Starting HP</strong>
                             <button
@@ -914,16 +914,16 @@ export default function Create() {
                                       <select
                                         className="rounded-full border border-white/20 bg-[rgba(6,8,13,0.7)] px-3 py-1 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
                                         value={abilityScores[ability] || ''}
-                                        onChange={(event) =>
+                                        onChange={(event) => {
+                                          const nextValue =
+                                            event.target.value === '' ? 0 : Number(event.target.value);
                                           setAbilityScores((prev) => ({
                                             ...prev,
-                                            [ability]: Number(event.target.value),
-                                          }))
-                                        }
+                                            [ability]: nextValue,
+                                          }));
+                                        }}
                                       >
-                                        <option value="" disabled>
-                                          --
-                                        </option>
+                                        <option value="">--</option>
                                         {options.map((value) => (
                                           <option key={`${ability}-${value}`} value={value}>
                                             {value}
@@ -931,18 +931,9 @@ export default function Create() {
                                         ))}
                                       </select>
                                     ) : (
-                                      <>
-                                        <span className="w-6 text-right text-[var(--ink)]">
-                                          {baseValue || '--'}
-                                        </span>
-                                        <button
-                                          type="button"
-                                          className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                          onClick={() => rollSingleAbility(ability)}
-                                        >
-                                          Roll
-                                        </button>
-                                      </>
+                                      <span className="w-6 text-right text-[var(--ink)]">
+                                        {baseValue || '--'}
+                                      </span>
                                     )}
                                     {boostValue ? (
                                       <span className="text-[var(--accent)]">+{boostValue}</span>
@@ -950,6 +941,15 @@ export default function Create() {
                                     <span className="text-[var(--ink)]">
                                       {finalValue || '--'} ({mod >= 0 ? `+${mod}` : mod})
                                     </span>
+                                    {abilityMethod === 'roll' ? (
+                                      <button
+                                        type="button"
+                                        className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                        onClick={() => rollSingleAbility(ability)}
+                                      >
+                                        Roll
+                                      </button>
+                                    ) : null}
                                   </div>
                                 </div>
                               );
