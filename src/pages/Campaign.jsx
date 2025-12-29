@@ -110,6 +110,15 @@ const sampleInventoryData = {
     consumables: [
       { id: 'con-1', name: 'Pale Verdant Draught', rarity: 'Common', effect: 'Health', potency: '5 HP', heal: 5 },
       { id: 'con-2', name: 'Pale Wraith Essence', rarity: 'Uncommon', effect: 'Soul', potency: '+1d4' },
+      {
+        id: 'con-3',
+        name: 'Tonic of Insight',
+        rarity: 'Uncommon',
+        effect: 'Investigation',
+        potency: '2 XP',
+        stat: 'Investigation',
+        statXp: 2,
+      },
     ],
     misc: [
       { id: 'misc-1', name: 'Tavern Crest Token', rarity: 'Common', note: 'Quest item' },
@@ -226,6 +235,17 @@ const sampleOssuary = [
     potency: '5 HP',
     heal: 5,
     note: 'Restores vitality on use.',
+  },
+  {
+    id: 'oss-6',
+    name: 'Tonic of Insight',
+    type: 'Consumable',
+    rarity: 'Uncommon',
+    effect: 'Investigation',
+    potency: '2 XP',
+    stat: 'Investigation',
+    statXp: 2,
+    note: 'Sharpens the mind for the next challenge.',
   },
   {
     id: 'oss-4',
@@ -422,6 +442,8 @@ export default function Campaign() {
   const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
   const [hpCurrent, setHpCurrent] = useState(0);
   const [activeBuffs, setActiveBuffs] = useState([]);
+  const [statLevels, setStatLevels] = useState({});
+  const [statProgressByName, setStatProgressByName] = useState({});
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -448,6 +470,8 @@ export default function Campaign() {
         const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
         setHpCurrent(currentHp);
         setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
+        setStatLevels(data.stats ?? {});
+        setStatProgressByName(data.stat_progress ?? {});
         setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
         setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
         setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
@@ -485,7 +509,7 @@ export default function Campaign() {
     await supabase.from('campaigns').update(patch).eq('id', campaign.id);
   };
 
-  const statsByName = campaign?.stats ?? {};
+  const statsByName = statLevels;
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 20;
   const npcList = useMemo(() => {
@@ -495,11 +519,15 @@ export default function Campaign() {
     return sampleNpcs;
   }, [campaign]);
 
-  const getStatRequirement = (stat) => STAT_REQUIREMENTS[stat] ?? 4;
-  const getStatProgress = (stat, value) => {
-    const required = getStatRequirement(stat);
-    const normalized = Math.max(0, Math.min(required, Math.round(((value + 5) / 10) * required)));
-    return { progress: normalized, required };
+  const getStatRequirement = (level) => (level >= 5 ? null : 2 * 2 ** level);
+  const getStatProgress = (stat) => {
+    const level = Math.max(0, Math.min(5, statsByName[stat] ?? 0));
+    const required = getStatRequirement(level);
+    if (!required) {
+      return { progress: 0, required: null, level };
+    }
+    const progress = Math.max(0, Math.min(required, statProgressByName[stat] ?? 0));
+    return { progress, required, level };
   };
 
   const getRepStatus = (rep, value) => {
@@ -833,6 +861,16 @@ export default function Campaign() {
   const buffFromConsumable = (item, healAmount) => {
     const effect = item.effect ?? item.name ?? 'Potion';
     const potency = item.potency ? ` ${item.potency}` : '';
+    const statTarget = item.stat ?? (STAT_REQUIREMENTS[item.effect] ? item.effect : null);
+    if (statTarget) {
+      const statAmount = item.statXp ?? Number.parseInt(item.potency, 10);
+      const detail = Number.isFinite(statAmount) ? `+${statAmount} XP to ${statTarget}` : `${statTarget} boosted`;
+      return {
+        id: `buff-${Date.now()}`,
+        name: statTarget,
+        detail,
+      };
+    }
     if (effect.toLowerCase().includes('health')) {
       return {
         id: `buff-${Date.now()}`,
@@ -861,6 +899,27 @@ export default function Campaign() {
     };
   };
 
+  const applyStatProgress = (level, progress, amount) => {
+    const safeLevel = Math.max(0, Math.min(5, Number.isFinite(level) ? level : 0));
+    if (safeLevel >= 5 || !Number.isFinite(amount) || amount <= 0) {
+      return { level: safeLevel, progress: safeLevel >= 5 ? 0 : Math.max(0, progress ?? 0) };
+    }
+    let nextLevel = safeLevel;
+    let remaining = (progress ?? 0) + amount;
+    let required = getStatRequirement(nextLevel);
+
+    while (required && remaining >= required && nextLevel < 5) {
+      remaining -= required;
+      nextLevel += 1;
+      required = getStatRequirement(nextLevel);
+    }
+
+    return {
+      level: nextLevel,
+      progress: nextLevel >= 5 || !required ? 0 : Math.max(0, remaining),
+    };
+  };
+
   const handleUseConsumable = async (item) => {
     const effect = item.effect ?? '';
     if (effect.toLowerCase().includes('health') && hpCurrent >= hpMax) {
@@ -880,11 +939,39 @@ export default function Campaign() {
     });
     const nextBuff = buffFromConsumable(item, healAmount);
     const nextBuffs = [nextBuff, ...activeBuffs].slice(0, 5);
+    const statTarget = item.stat ?? (STAT_REQUIREMENTS[item.effect] ? item.effect : null);
+    const statAmount =
+      Number.isFinite(item.statXp) ? item.statXp : Number.parseInt(item.potency, 10) || 0;
+
+    let nextStats = statLevels;
+    let nextStatProgress = statProgressByName;
+
+    if (statTarget && STAT_REQUIREMENTS[statTarget]) {
+      const currentLevel = statLevels?.[statTarget] ?? 0;
+      const currentProgress = statProgressByName?.[statTarget] ?? 0;
+      const updated = applyStatProgress(currentLevel, currentProgress, statAmount || 1);
+      nextStats = {
+        ...statLevels,
+        [statTarget]: updated.level,
+      };
+      nextStatProgress = {
+        ...statProgressByName,
+        [statTarget]: updated.progress,
+      };
+      setStatLevels(nextStats);
+      setStatProgressByName(nextStatProgress);
+    }
 
     setHpCurrent(nextHp);
     setInventoryData(nextInventory);
     setActiveBuffs(nextBuffs);
-    await savePatch({ inventory: nextInventory, hp_current: nextHp, buffs: nextBuffs });
+    await savePatch({
+      inventory: nextInventory,
+      hp_current: nextHp,
+      buffs: nextBuffs,
+      stats: nextStats,
+      stat_progress: nextStatProgress,
+    });
   };
 
   const addLootToInventory = (items, baseInventory) => {
@@ -907,6 +994,8 @@ export default function Campaign() {
         effect: item.effect,
         potency: item.potency,
         heal: item.heal,
+        stat: item.stat,
+        statXp: item.statXp,
         note: item.note,
       };
       return {
@@ -1430,16 +1519,15 @@ export default function Campaign() {
                       </div>
                       <div className="mt-3 grid gap-2">
                         {stats.map((stat) => {
-                          const value = statsByName[stat] ?? 0;
-                          const { progress, required } = getStatProgress(stat, value);
-                          const width = required ? (progress / required) * 100 : 0;
-                          const displayValue = value > 0 ? `+${value}` : value;
+                          const { progress, required, level } = getStatProgress(stat);
+                          const width = required ? (progress / required) * 100 : 100;
+                          const displayValue = level > 0 ? `+${level}` : level;
                           return (
                             <div key={stat} className="flex items-center justify-between text-sm">
                               <div className="flex items-center gap-2">
                                 <span
                                   className="w-8 text-right font-semibold"
-                                  style={getValueStyle(value, 5)}
+                                  style={getValueStyle(level, 5)}
                                 >
                                   {displayValue}
                                 </span>
@@ -1452,7 +1540,7 @@ export default function Campaign() {
                                     style={{ width: `${width}%` }}
                                   ></div>
                                 </div>
-                                <span>{progress}/{required}</span>
+                                <span>{required ? `${progress}/${required}` : 'MAX'}</span>
                               </div>
                             </div>
                           );
@@ -1496,8 +1584,8 @@ export default function Campaign() {
                             weaponsForDamage.length === 0
                               ? 0
                               : twoHandedEquipped
-                                ? statsByName['Two Handed'] ?? 0
-                                : statsByName['One Handed'] ?? 0;
+                                ? Math.max(0, statsByName['Two Handed'] ?? 0)
+                                : Math.max(0, statsByName['One Handed'] ?? 0);
                           const damageLabel = formatDamageLabel(weaponsForDamage, bonusStat);
                           const totalAc = Object.values(inventoryData?.equipped?.armor ?? {}).reduce(
                             (sum, item) => sum + (item?.ac ?? 0),
