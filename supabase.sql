@@ -1,24 +1,44 @@
 create table if not exists public.campaigns (
   id uuid primary key default gen_random_uuid(),
   name text not null,
+  race text,
+  alignment text,
+  race_boosts jsonb not null default '{}'::jsonb,
   look text not null,
   gender text not null,
   class_name text not null,
   class_description text not null,
   stats jsonb not null,
+  ability_scores jsonb not null default '{}'::jsonb,
+  ability_progress jsonb not null default '{}'::jsonb,
+  skills jsonb not null default '{}'::jsonb,
+  skill_progress jsonb not null default '{}'::jsonb,
+  skill_points integer not null default 0,
   reputation jsonb not null,
   hp integer not null,
+  hp_current integer,
   backstory text not null,
   messages jsonb not null default '[]'::jsonb,
   quests jsonb not null default '[]'::jsonb,
   bounties jsonb not null default '[]'::jsonb,
   inventory jsonb not null default '[]'::jsonb,
+  buffs jsonb not null default '[]'::jsonb,
   relationships jsonb not null default '[]'::jsonb,
   journal jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
+alter table public.campaigns add column if not exists race text;
+alter table public.campaigns add column if not exists alignment text;
+alter table public.campaigns add column if not exists race_boosts jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists ability_scores jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists ability_progress jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists skills jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists skill_progress jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists skill_points integer not null default 0;
+alter table public.campaigns add column if not exists hp_current integer;
+alter table public.campaigns add column if not exists buffs jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists messages jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists quests jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists bounties jsonb not null default '[]'::jsonb;
