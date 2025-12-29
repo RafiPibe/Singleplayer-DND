@@ -2,6 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
+import {
+  ABILITIES,
+  SKILLS,
+  SKILLS_BY_ABILITY,
+  getAbilityModifier,
+  getAbilityRequirement,
+} from '../data/abilities.js';
 
 const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
 
@@ -75,7 +82,7 @@ const sampleInventoryData = {
   },
   equipped: {
     weapons: [
-      { name: 'Sprouting Dagger', type: 'One-Handed', damage: '1d6', rarity: 'Common' },
+      { name: 'Sprouting Dagger', type: 'Melee (One-Handed)', damage: '1d6', rarity: 'Common' },
       null,
     ],
     armor: {
@@ -92,14 +99,14 @@ const sampleInventoryData = {
         id: 'wpn-1',
         name: 'Sprouting Dagger',
         rarity: 'Common',
-        weaponType: 'One-Handed',
+        weaponType: 'Melee (One-Handed)',
         damage: '1d6',
       },
       {
         id: 'wpn-2',
         name: 'Gravebound Greatsword',
         rarity: 'Rare',
-        weaponType: 'Two-Handed',
+        weaponType: 'Melee (Two-Handed)',
         damage: '1d12',
       },
     ],
@@ -116,8 +123,8 @@ const sampleInventoryData = {
         rarity: 'Uncommon',
         effect: 'Investigation',
         potency: '2 XP',
-        stat: 'Investigation',
-        statXp: 2,
+        skill: 'Investigation',
+        skillXp: 2,
       },
     ],
     misc: [
@@ -204,7 +211,7 @@ const sampleOssuary = [
     name: 'Charred Boneblade',
     type: 'Weapon',
     rarity: 'Rare',
-    weaponType: 'Two-Handed',
+    weaponType: 'Melee (Two-Handed)',
     damage: '2d6',
     note: 'Recovered from the ash-wreathed knight.',
   },
@@ -243,8 +250,8 @@ const sampleOssuary = [
     rarity: 'Uncommon',
     effect: 'Investigation',
     potency: '2 XP',
-    stat: 'Investigation',
-    statXp: 2,
+    skill: 'Investigation',
+    skillXp: 2,
     note: 'Sharpens the mind for the next challenge.',
   },
   {
@@ -255,42 +262,6 @@ const sampleOssuary = [
     note: 'Marked with a forgotten crest.',
   },
 ];
-
-const STAT_CATEGORIES = {
-  ADVENTURER: ['Investigation', 'Climbing', 'Aim', 'Beastmastery'],
-  BRUTE: ['Brawling', 'Ranged', 'One Handed', 'Two Handed'],
-  THIEF: ['Acrobatics', 'Sleight Of Hand', 'Stealth', 'Lockpicking'],
-  MAGICIAN: ['Destruction', 'Regeneration', 'Necromancy', 'Alteration', 'Bloodmancy', 'Illusion', 'Soulbinding'],
-  'SILVER TONGUE': ['Deception', 'Persuasion', 'Performance', 'Intimidation', 'Seduction', 'Bartering'],
-};
-
-const STAT_REQUIREMENTS = {
-  Investigation: 4,
-  Climbing: 2,
-  Aim: 2,
-  Beastmastery: 2,
-  Brawling: 2,
-  Ranged: 2,
-  'One Handed': 2,
-  'Two Handed': 2,
-  Acrobatics: 4,
-  'Sleight Of Hand': 6,
-  Stealth: 2,
-  Lockpicking: 2,
-  Destruction: 6,
-  Regeneration: 2,
-  Necromancy: 2,
-  Alteration: 12,
-  Bloodmancy: 2,
-  Illusion: 10,
-  Soulbinding: 2,
-  Deception: 8,
-  Persuasion: 4,
-  Performance: 10,
-  Intimidation: 2,
-  Seduction: 2,
-  Bartering: 2,
-};
 
 const REP_ORDER = ['Honor', 'Mercy', 'Bravery', 'Loyalty', 'Justice', 'Generosity'];
 
@@ -442,8 +413,11 @@ export default function Campaign() {
   const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
   const [hpCurrent, setHpCurrent] = useState(0);
   const [activeBuffs, setActiveBuffs] = useState([]);
-  const [statLevels, setStatLevels] = useState({});
-  const [statProgressByName, setStatProgressByName] = useState({});
+  const [abilityScores, setAbilityScores] = useState({});
+  const [abilityProgress, setAbilityProgress] = useState({});
+  const [skillLevels, setSkillLevels] = useState({});
+  const [skillProgress, setSkillProgress] = useState({});
+  const [skillPoints, setSkillPoints] = useState(0);
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -470,8 +444,11 @@ export default function Campaign() {
         const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
         setHpCurrent(currentHp);
         setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
-        setStatLevels(data.stats ?? {});
-        setStatProgressByName(data.stat_progress ?? {});
+        setAbilityScores(data.ability_scores ?? data.stats ?? {});
+        setAbilityProgress(data.ability_progress ?? {});
+        setSkillLevels(data.skills ?? {});
+        setSkillProgress(data.skill_progress ?? {});
+        setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
         setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
         setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
         setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
@@ -509,7 +486,9 @@ export default function Campaign() {
     await supabase.from('campaigns').update(patch).eq('id', campaign.id);
   };
 
-  const statsByName = statLevels;
+  const abilityScoresByName = abilityScores;
+  const skillLevelsByName = skillLevels;
+  const skillProgressByName = skillProgress;
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 20;
   const npcList = useMemo(() => {
@@ -519,15 +498,20 @@ export default function Campaign() {
     return sampleNpcs;
   }, [campaign]);
 
-  const getStatRequirement = (level) => (level >= 5 ? null : 2 * 2 ** level);
-  const getStatProgress = (stat) => {
-    const level = Math.max(0, Math.min(5, statsByName[stat] ?? 0));
-    const required = getStatRequirement(level);
-    if (!required) {
-      return { progress: 0, required: null, level };
-    }
-    const progress = Math.max(0, Math.min(required, statProgressByName[stat] ?? 0));
-    return { progress, required, level };
+  const getAbilityProgress = (ability) => {
+    const score = Math.max(1, Math.min(30, abilityScoresByName[ability] ?? 10));
+    const required = getAbilityRequirement(score);
+    const progress = Math.max(0, Math.min(required ?? 0, abilityProgress[ability] ?? 0));
+    return { score, required, progress };
+  };
+
+  const getSkillRequirement = (level) => Math.max(2, level + 2);
+
+  const getSkillProgress = (skill) => {
+    const level = Math.max(0, skillLevelsByName[skill] ?? 0);
+    const required = getSkillRequirement(level);
+    const progress = Math.max(0, Math.min(required, skillProgressByName[skill] ?? 0));
+    return { level, required, progress };
   };
 
   const getRepStatus = (rep, value) => {
@@ -569,6 +553,17 @@ export default function Campaign() {
 
   const isTwoHandedWeapon = (item) =>
     (item?.weaponType ?? item?.type ?? '').toLowerCase().includes('two');
+
+  const getWeaponAbility = (item) => {
+    const type = (item?.weaponType ?? item?.type ?? '').toLowerCase();
+    if (type.includes('grimoire')) return 'Intelligence';
+    if (type.includes('ocarina')) return 'Charisma';
+    if (type.includes('ranged')) return 'Dexterity';
+    if (type.includes('melee') || type.includes('one-handed') || type.includes('two-handed')) {
+      return 'Dexterity';
+    }
+    return 'Strength';
+  };
 
   const normalizeDice = (value) => {
     if (!value) return null;
@@ -861,13 +856,30 @@ export default function Campaign() {
   const buffFromConsumable = (item, healAmount) => {
     const effect = item.effect ?? item.name ?? 'Potion';
     const potency = item.potency ? ` ${item.potency}` : '';
-    const statTarget = item.stat ?? (STAT_REQUIREMENTS[item.effect] ? item.effect : null);
-    if (statTarget) {
-      const statAmount = item.statXp ?? Number.parseInt(item.potency, 10);
-      const detail = Number.isFinite(statAmount) ? `+${statAmount} XP to ${statTarget}` : `${statTarget} boosted`;
+    const abilityTarget = item.ability ?? (ABILITIES.includes(item.effect) ? item.effect : null);
+    const skillTarget = item.skill ?? (SKILLS.includes(item.effect) ? item.effect : null);
+    if (abilityTarget) {
+      const boost = item.abilityScoreBoost ?? item.abilityBoost;
+      if (Number.isFinite(boost)) {
+        return {
+          id: `buff-${Date.now()}`,
+          name: abilityTarget,
+          detail: item.abilityScoreBoost ? `+${boost} ${abilityTarget} (permanent)` : `+${boost} ${abilityTarget} (temporary)`,
+        };
+      }
+      const detail = potency ? `${abilityTarget}${potency}` : `${abilityTarget} empowered`;
       return {
         id: `buff-${Date.now()}`,
-        name: statTarget,
+        name: abilityTarget,
+        detail,
+      };
+    }
+    if (skillTarget) {
+      const statAmount = item.skillXp ?? Number.parseInt(item.potency, 10);
+      const detail = Number.isFinite(statAmount) ? `+${statAmount} XP to ${skillTarget}` : `${skillTarget} boosted`;
+      return {
+        id: `buff-${Date.now()}`,
+        name: skillTarget,
         detail,
       };
     }
@@ -899,25 +911,80 @@ export default function Campaign() {
     };
   };
 
-  const applyStatProgress = (level, progress, amount) => {
-    const safeLevel = Math.max(0, Math.min(5, Number.isFinite(level) ? level : 0));
-    if (safeLevel >= 5 || !Number.isFinite(amount) || amount <= 0) {
-      return { level: safeLevel, progress: safeLevel >= 5 ? 0 : Math.max(0, progress ?? 0) };
+  const applyAbilityProgress = (score, progress, amount) => {
+    const safeScore = Math.max(1, Math.min(30, Number.isFinite(score) ? score : 10));
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { score: safeScore, progress: Math.max(0, progress ?? 0) };
+    }
+    let nextScore = safeScore;
+    let remaining = (progress ?? 0) + amount;
+    let required = getAbilityRequirement(nextScore);
+
+    while (required && remaining >= required && nextScore < 30) {
+      remaining -= required;
+      nextScore += 1;
+      required = getAbilityRequirement(nextScore);
+    }
+
+    return {
+      score: nextScore,
+      progress: nextScore >= 30 || !required ? 0 : Math.max(0, remaining),
+    };
+  };
+
+  const applySkillProgress = (level, progress, amount) => {
+    const safeLevel = Math.max(0, Number.isFinite(level) ? level : 0);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { level: safeLevel, progress: Math.max(0, progress ?? 0), gainedPoints: 0 };
     }
     let nextLevel = safeLevel;
     let remaining = (progress ?? 0) + amount;
-    let required = getStatRequirement(nextLevel);
+    let required = getSkillRequirement(nextLevel);
+    let gainedPoints = 0;
+    let tier = Math.floor(nextLevel / 3);
 
-    while (required && remaining >= required && nextLevel < 5) {
+    while (remaining >= required) {
       remaining -= required;
       nextLevel += 1;
-      required = getStatRequirement(nextLevel);
+      const nextTier = Math.floor(nextLevel / 3);
+      if (nextTier > tier) {
+        gainedPoints += nextTier - tier;
+        tier = nextTier;
+      }
+      required = getSkillRequirement(nextLevel);
     }
 
     return {
       level: nextLevel,
-      progress: nextLevel >= 5 || !required ? 0 : Math.max(0, remaining),
+      progress: Math.max(0, remaining),
+      gainedPoints,
     };
+  };
+
+  const handleSpendSkillPoint = async (ability) => {
+    if (skillPoints <= 0) return;
+    const currentScore = abilityScoresByName[ability] ?? 10;
+    if (currentScore >= 30) return;
+    const nextScore = currentScore + 1;
+    const nextScores = {
+      ...abilityScoresByName,
+      [ability]: nextScore,
+    };
+    const nextProgress = {
+      ...abilityProgress,
+      [ability]: 0,
+    };
+    const nextPoints = skillPoints - 1;
+
+    setAbilityScores(nextScores);
+    setAbilityProgress(nextProgress);
+    setSkillPoints(nextPoints);
+    await savePatch({
+      stats: nextScores,
+      ability_scores: nextScores,
+      ability_progress: nextProgress,
+      skill_points: nextPoints,
+    });
   };
 
   const handleUseConsumable = async (item) => {
@@ -939,38 +1006,84 @@ export default function Campaign() {
     });
     const nextBuff = buffFromConsumable(item, healAmount);
     const nextBuffs = [nextBuff, ...activeBuffs].slice(0, 5);
-    const statTarget = item.stat ?? (STAT_REQUIREMENTS[item.effect] ? item.effect : null);
-    const statAmount =
-      Number.isFinite(item.statXp) ? item.statXp : Number.parseInt(item.potency, 10) || 0;
+    const abilityTarget = item.ability ?? (ABILITIES.includes(item.effect) ? item.effect : null);
+    const skillTarget = item.skill ?? (SKILLS.includes(item.effect) ? item.effect : null);
+    const abilityScoreBoost = item.abilityScoreBoost ?? item.abilityBoost;
+    const abilityXp = Number.isFinite(item.abilityXp)
+      ? item.abilityXp
+      : Number.parseInt(item.potency, 10) || 0;
+    const skillXp = Number.isFinite(item.skillXp)
+      ? item.skillXp
+      : Number.parseInt(item.potency, 10) || 0;
 
-    let nextStats = statLevels;
-    let nextStatProgress = statProgressByName;
+    let nextAbilityScores = abilityScoresByName;
+    let nextAbilityProgress = abilityProgress;
+    let nextSkillLevels = skillLevelsByName;
+    let nextSkillProgress = skillProgressByName;
+    let nextSkillPoints = skillPoints;
 
-    if (statTarget && STAT_REQUIREMENTS[statTarget]) {
-      const currentLevel = statLevels?.[statTarget] ?? 0;
-      const currentProgress = statProgressByName?.[statTarget] ?? 0;
-      const updated = applyStatProgress(currentLevel, currentProgress, statAmount || 1);
-      nextStats = {
-        ...statLevels,
-        [statTarget]: updated.level,
+    if (abilityTarget && ABILITIES.includes(abilityTarget)) {
+      if (Number.isFinite(abilityScoreBoost)) {
+        const currentScore = abilityScoresByName?.[abilityTarget] ?? 10;
+        const boostedScore = Math.min(30, currentScore + abilityScoreBoost);
+        nextAbilityScores = {
+          ...abilityScoresByName,
+          [abilityTarget]: boostedScore,
+        };
+        nextAbilityProgress = {
+          ...abilityProgress,
+          [abilityTarget]: 0,
+        };
+      } else if (abilityXp > 0) {
+        const currentScore = abilityScoresByName?.[abilityTarget] ?? 10;
+        const currentProgress = abilityProgress?.[abilityTarget] ?? 0;
+        const updated = applyAbilityProgress(currentScore, currentProgress, abilityXp);
+        nextAbilityScores = {
+          ...abilityScoresByName,
+          [abilityTarget]: updated.score,
+        };
+        nextAbilityProgress = {
+          ...abilityProgress,
+          [abilityTarget]: updated.progress,
+        };
+      }
+    }
+
+    if (skillTarget && SKILLS.includes(skillTarget) && skillXp > 0) {
+      const currentLevel = skillLevelsByName?.[skillTarget] ?? 0;
+      const currentProgress = skillProgressByName?.[skillTarget] ?? 0;
+      const updated = applySkillProgress(currentLevel, currentProgress, skillXp);
+      nextSkillLevels = {
+        ...skillLevelsByName,
+        [skillTarget]: updated.level,
       };
-      nextStatProgress = {
-        ...statProgressByName,
-        [statTarget]: updated.progress,
+      nextSkillProgress = {
+        ...skillProgressByName,
+        [skillTarget]: updated.progress,
       };
-      setStatLevels(nextStats);
-      setStatProgressByName(nextStatProgress);
+      if (updated.gainedPoints) {
+        nextSkillPoints += updated.gainedPoints;
+      }
     }
 
     setHpCurrent(nextHp);
     setInventoryData(nextInventory);
     setActiveBuffs(nextBuffs);
+    setAbilityScores(nextAbilityScores);
+    setAbilityProgress(nextAbilityProgress);
+    setSkillLevels(nextSkillLevels);
+    setSkillProgress(nextSkillProgress);
+    setSkillPoints(nextSkillPoints);
     await savePatch({
       inventory: nextInventory,
       hp_current: nextHp,
       buffs: nextBuffs,
-      stats: nextStats,
-      stat_progress: nextStatProgress,
+      stats: nextAbilityScores,
+      ability_scores: nextAbilityScores,
+      ability_progress: nextAbilityProgress,
+      skills: nextSkillLevels,
+      skill_progress: nextSkillProgress,
+      skill_points: nextSkillPoints,
     });
   };
 
@@ -994,8 +1107,11 @@ export default function Campaign() {
         effect: item.effect,
         potency: item.potency,
         heal: item.heal,
-        stat: item.stat,
-        statXp: item.statXp,
+        ability: item.ability,
+        abilityScoreBoost: item.abilityScoreBoost,
+        abilityXp: item.abilityXp,
+        skill: item.skill,
+        skillXp: item.skillXp,
         note: item.note,
       };
       return {
@@ -1345,10 +1461,18 @@ export default function Campaign() {
                           <p className="m-0 text-xs text-[var(--soft)]">
                             {campaign?.class_name ?? 'Class'}
                           </p>
-                          <p className="m-0 text-xs text-[var(--soft)]">
-                            <span className="font-semibold text-[var(--ink)]">Gender:</span>{' '}
-                            {campaign?.gender ?? 'Unknown'}
-                          </p>
+                        <p className="m-0 text-xs text-[var(--soft)]">
+                          <span className="font-semibold text-[var(--ink)]">Gender:</span>{' '}
+                          {campaign?.gender ?? 'Unknown'}
+                        </p>
+                        <p className="m-0 text-xs text-[var(--soft)]">
+                          <span className="font-semibold text-[var(--ink)]">Race:</span>{' '}
+                          {campaign?.race ?? 'Unknown'}
+                        </p>
+                        <p className="m-0 text-xs text-[var(--soft)]">
+                          <span className="font-semibold text-[var(--ink)]">Alignment:</span>{' '}
+                          {campaign?.alignment ?? 'Unknown'}
+                        </p>
                           <p className="m-0 text-xs text-[var(--soft)]">
                             <span className="font-semibold text-[var(--ink)]">Appearance:</span>{' '}
                             {campaign?.look ?? '---'}
@@ -1509,45 +1633,90 @@ export default function Campaign() {
 
               {leftTab === 3 && (
                 <div className="grid gap-3">
-                  {Object.entries(STAT_CATEGORIES).map(([category, stats]) => (
-                    <div
-                      key={category}
-                      className="rounded-[14px] border border-[rgba(214,179,106,0.35)] bg-[rgba(14,11,3,0.5)] p-3"
-                    >
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
-                        {category}
-                      </div>
-                      <div className="mt-3 grid gap-2">
-                        {stats.map((stat) => {
-                          const { progress, required, level } = getStatProgress(stat);
-                          const width = required ? (progress / required) * 100 : 100;
-                          const displayValue = level > 0 ? `+${level}` : level;
-                          return (
-                            <div key={stat} className="flex items-center justify-between text-sm">
-                              <div className="flex items-center gap-2">
-                                <span
-                                  className="w-8 text-right font-semibold"
-                                  style={getValueStyle(level, 5)}
-                                >
-                                  {displayValue}
-                                </span>
-                                <span>{stat}</span>
-                              </div>
-                              <div className="flex items-center gap-2 text-xs text-[var(--soft)]">
-                                <div className="h-1.5 w-20 rounded-full bg-white/10">
-                                  <div
-                                    className="h-1.5 rounded-full bg-[var(--accent)]"
-                                    style={{ width: `${width}%` }}
-                                  ></div>
-                                </div>
-                                <span>{required ? `${progress}/${required}` : 'MAX'}</span>
-                              </div>
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
+                    <span>Ability Scores</span>
+                    <span>Skill Points: {skillPoints}</span>
+                  </div>
+                  {ABILITIES.map((ability) => {
+                    const { score, required, progress } = getAbilityProgress(ability);
+                    const modifier = getAbilityModifier(score);
+                    const width = required ? (progress / required) * 100 : 100;
+                    const skills = SKILLS_BY_ABILITY[ability] ?? [];
+                    return (
+                      <div
+                        key={ability}
+                        className="rounded-[14px] border border-[rgba(214,179,106,0.35)] bg-[rgba(14,11,3,0.5)] p-3"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+                              {ability}
                             </div>
-                          );
-                        })}
+                            <div className="mt-1 text-xs text-[var(--soft)]">
+                              Modifier {modifier >= 0 ? `+${modifier}` : modifier}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-lg font-semibold text-[var(--ink)]">{score}</span>
+                            {skillPoints > 0 && score < 30 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleSpendSkillPoint(ability)}
+                                className="rounded-full border border-[rgba(214,179,106,0.6)] px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)]"
+                              >
+                                +1
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                        <div className="mt-3 flex items-center gap-2 text-xs text-[var(--soft)]">
+                          <div className="h-1.5 flex-1 rounded-full bg-white/10">
+                            <div
+                              className="h-1.5 rounded-full bg-[var(--accent)]"
+                              style={{ width: `${width}%` }}
+                            ></div>
+                          </div>
+                          <span>{required ? `${progress}/${required}` : 'MAX'}</span>
+                        </div>
+                        {skills.length ? (
+                          <div className="mt-3 grid gap-2 text-sm">
+                            {skills.map((skill) => {
+                              const { level, required: skillRequired, progress: skillProgressValue } =
+                                getSkillProgress(skill);
+                              const skillWidth = (skillProgressValue / skillRequired) * 100;
+                              const displayValue = level > 0 ? `+${level}` : level;
+                              return (
+                                <div key={skill} className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span
+                                      className="w-8 text-right font-semibold"
+                                      style={getValueStyle(level, 10)}
+                                    >
+                                      {displayValue}
+                                    </span>
+                                    <span>{skill}</span>
+                                  </div>
+                                  <div className="flex items-center gap-2 text-xs text-[var(--soft)]">
+                                    <div className="h-1.5 w-20 rounded-full bg-white/10">
+                                      <div
+                                        className="h-1.5 rounded-full bg-[var(--accent)]"
+                                        style={{ width: `${skillWidth}%` }}
+                                      ></div>
+                                    </div>
+                                    <span>
+                                      {skillProgressValue}/{skillRequired}
+                                    </span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-xs text-[var(--soft)]">No skills tied to this ability.</p>
+                        )}
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -1580,12 +1749,12 @@ export default function Campaign() {
                           const twoHandedEquipped = equippedWeapons.find(isTwoHandedWeapon);
                           const weaponsForDamage = twoHandedEquipped ? [twoHandedEquipped] : equippedWeapons;
                           const weaponLabel = formatWeaponLabel(weaponsForDamage);
-                          const bonusStat =
-                            weaponsForDamage.length === 0
-                              ? 0
-                              : twoHandedEquipped
-                                ? Math.max(0, statsByName['Two Handed'] ?? 0)
-                                : Math.max(0, statsByName['One Handed'] ?? 0);
+                          const abilityForWeapon = weaponsForDamage.length
+                            ? getWeaponAbility(weaponsForDamage[0])
+                            : null;
+                          const bonusStat = abilityForWeapon
+                            ? getAbilityModifier(abilityScoresByName[abilityForWeapon] ?? 10)
+                            : 0;
                           const damageLabel = formatDamageLabel(weaponsForDamage, bonusStat);
                           const totalAc = Object.values(inventoryData?.equipped?.armor ?? {}).reduce(
                             (sum, item) => sum + (item?.ac ?? 0),

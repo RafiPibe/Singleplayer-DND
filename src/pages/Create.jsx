@@ -1,26 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import {
-  CLASSES,
-  CUSTOM_CLASS,
-  REPUTATION,
-  STATS,
-  HP_RANGE,
-  buildStats,
-} from '../data/classes.js';
+import { CLASSES, CUSTOM_CLASS, REPUTATION, HP_RANGE } from '../data/classes.js';
+import { ABILITIES, STANDARD_ARRAY, SKILLS, getAbilityModifier } from '../data/abilities.js';
+import { RACES } from '../data/races.js';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 6;
 const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
-const rollWithOpposedDice = (sides) => rollDie(sides) - rollDie(sides);
 const rollInRange = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
 const rollHpValue = () => rollInRange(HP_RANGE.min, HP_RANGE.max);
+const rollAbilityScore = () => {
+  const rolls = Array.from({ length: 4 }, () => rollDie(6)).sort((a, b) => a - b);
+  return rolls.slice(1).reduce((sum, value) => sum + value, 0);
+};
+
+const ALIGNMENTS = [
+  'Lawful Good',
+  'Neutral Good',
+  'Chaotic Good',
+  'Lawful Neutral',
+  'True Neutral',
+  'Chaotic Neutral',
+  'Lawful Evil',
+  'Neutral Evil',
+  'Chaotic Evil',
+];
 
 export default function Create() {
   const navigate = useNavigate();
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
+  const [race, setRace] = useState('');
+  const [customRaceName, setCustomRaceName] = useState('');
+  const [raceVariantIndex, setRaceVariantIndex] = useState(0);
+  const [raceChoices, setRaceChoices] = useState([]);
+  const [alignment, setAlignment] = useState('');
   const [look, setLook] = useState('');
   const [gender, setGender] = useState('Male');
   const [genderCustom, setGenderCustom] = useState('');
@@ -28,14 +43,14 @@ export default function Create() {
   const [customNickname, setCustomNickname] = useState('');
   const [customClassName, setCustomClassName] = useState('');
   const [customDescription, setCustomDescription] = useState('');
-  const [customStats, setCustomStats] = useState(() => {
+  const [abilityMethod, setAbilityMethod] = useState('roll');
+  const [abilityScores, setAbilityScores] = useState(() => {
     const base = {};
-    STATS.forEach((stat) => {
-      base[stat] = 0;
+    ABILITIES.forEach((ability) => {
+      base[ability] = 0;
     });
     return base;
   });
-  const [classStats, setClassStats] = useState(() => ({}));
   const [customReputation, setCustomReputation] = useState(() => {
     const base = {};
     REPUTATION.forEach((rep) => {
@@ -46,9 +61,8 @@ export default function Create() {
   const [classReputation, setClassReputation] = useState(() => ({}));
   const [rolledHp, setRolledHp] = useState(() => rollHpValue());
   const [hpDisplay, setHpDisplay] = useState(() => rollHpValue());
-  const [rollingStats, setRollingStats] = useState({});
+  const [rollingAbilities, setRollingAbilities] = useState({});
   const [rollingReputation, setRollingReputation] = useState({});
-  const [rollingClassStats, setRollingClassStats] = useState({});
   const [rollingClassReputation, setRollingClassReputation] = useState({});
   const [rollingHp, setRollingHp] = useState(false);
   const [backstory, setBackstory] = useState('');
@@ -57,6 +71,45 @@ export default function Create() {
   const timersRef = useRef({ intervals: new Set(), timeouts: new Set() });
 
   const classOptions = useMemo(() => [...CLASSES, CUSTOM_CLASS], []);
+  const raceConfig = useMemo(() => RACES.find((entry) => entry.name === race), [race]);
+  const activeRaceVariant = raceConfig?.variants?.[raceVariantIndex] ?? null;
+  const raceChoiceConfig = activeRaceVariant?.choices ?? raceConfig?.choices ?? [];
+  const raceHasUniqueChoices = activeRaceVariant?.unique ?? false;
+
+  const raceBoosts = useMemo(() => {
+    const boosts = { ...(raceConfig?.base ?? {}) };
+    if (activeRaceVariant?.boosts) {
+      Object.entries(activeRaceVariant.boosts).forEach(([ability, amount]) => {
+        boosts[ability] = (boosts[ability] ?? 0) + amount;
+      });
+    }
+    raceChoiceConfig.forEach((choice, index) => {
+      const pick = raceChoices[index];
+      if (!pick) return;
+      boosts[pick] = (boosts[pick] ?? 0) + choice.amount;
+    });
+    return boosts;
+  }, [raceConfig, activeRaceVariant, raceChoiceConfig, raceChoices]);
+
+  const baseAbilityScores = useMemo(() => {
+    const base = {};
+    ABILITIES.forEach((ability) => {
+      const value =
+        abilityMethod === 'roll'
+          ? rollingAbilities[ability] ?? abilityScores[ability]
+          : abilityScores[ability];
+      base[ability] = Number.isFinite(value) ? value : 0;
+    });
+    return base;
+  }, [abilityMethod, abilityScores, rollingAbilities]);
+
+  const finalAbilityScores = useMemo(() => {
+    const withBoosts = { ...baseAbilityScores };
+    Object.entries(raceBoosts).forEach(([ability, amount]) => {
+      withBoosts[ability] = (withBoosts[ability] ?? 0) + amount;
+    });
+    return withBoosts;
+  }, [baseAbilityScores, raceBoosts]);
 
   const getDisplayName = (cls) => {
     const nickname = cls.nickname ?? cls.name;
@@ -64,7 +117,6 @@ export default function Create() {
     return `${nickname} (${role})`;
   };
 
-  const rollStatValue = () => rollWithOpposedDice(6);
   const rollRepValue = () => rollInRange(-20, 20);
 
   const trackInterval = (id) => {
@@ -91,6 +143,35 @@ export default function Create() {
       timersRef.current.timeouts.forEach((id) => clearTimeout(id));
     };
   }, []);
+
+  useEffect(() => {
+    setRaceVariantIndex(0);
+    setRaceChoices([]);
+    if (race !== 'Custom') {
+      setCustomRaceName('');
+    }
+  }, [race]);
+
+  useEffect(() => {
+    if (!raceChoiceConfig.length) {
+      setRaceChoices([]);
+      return;
+    }
+    setRaceChoices(Array.from({ length: raceChoiceConfig.length }, () => ''));
+  }, [race, raceVariantIndex, raceChoiceConfig.length]);
+
+  useEffect(() => {
+    if (abilityMethod === 'standard') {
+      setRollingAbilities({});
+      setAbilityScores((prev) => {
+        const reset = {};
+        ABILITIES.forEach((ability) => {
+          reset[ability] = 0;
+        });
+        return reset;
+      });
+    }
+  }, [abilityMethod]);
 
   const animateRollSet = (keys, randomFn, setRollingMap, applyFinal) => {
     const intervalId = setInterval(() => {
@@ -141,9 +222,9 @@ export default function Create() {
     trackTimeout(timeoutId);
   };
 
-  const rollAllStats = () => {
-    animateRollSet(STATS, rollStatValue, setRollingStats, (final) => {
-      setCustomStats(final);
+  const rollAllAbilities = () => {
+    animateRollSet(ABILITIES, rollAbilityScore, setRollingAbilities, (final) => {
+      setAbilityScores(final);
     });
   };
 
@@ -153,9 +234,17 @@ export default function Create() {
     });
   };
 
-  const rollSingleStat = (stat) => {
-    animateRollSet([stat], rollStatValue, setRollingStats, (final) => {
-      setCustomStats((prev) => ({ ...prev, ...final }));
+  const rollReputationSet = () => {
+    if (selectedClass === CUSTOM_CLASS.name) {
+      rollAllReputation();
+    } else {
+      rollClassReputation();
+    }
+  };
+
+  const rollSingleAbility = (ability) => {
+    animateRollSet([ability], rollAbilityScore, setRollingAbilities, (final) => {
+      setAbilityScores((prev) => ({ ...prev, ...final }));
     });
   };
 
@@ -175,16 +264,6 @@ export default function Create() {
     });
   };
 
-  const rollClassStats = () => {
-    if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
-    animateRollSet(STATS, rollStatValue, setRollingClassStats, (final) => {
-      setClassStats((prev) => ({
-        ...prev,
-        [selectedClass]: final,
-      }));
-    });
-  };
-
   useEffect(() => {
     if (selectedClass === CUSTOM_CLASS.name) {
       setError('');
@@ -192,26 +271,12 @@ export default function Create() {
   }, [selectedClass, customNickname, customClassName, customDescription]);
 
   useEffect(() => {
-    if (selectedClass !== CUSTOM_CLASS.name) return;
-    setCustomStats((prev) => {
-      if (prev) return prev;
-      const base = {};
-      STATS.forEach((stat) => {
-        base[stat] = 0;
-      });
-      return base;
-    });
-  }, [selectedClass]);
-
-  useEffect(() => {
     if (!selectedClass) return;
     const nextHp = rollHpValue();
     setRolledHp(nextHp);
     setHpDisplay(nextHp);
     setRollingHp(false);
-    setRollingStats({});
     setRollingReputation({});
-    setRollingClassStats({});
     setRollingClassReputation({});
   }, [selectedClass]);
 
@@ -227,7 +292,6 @@ export default function Create() {
         displayName: `${nickname} (${role})`,
         description,
         hp: rolledHp,
-        stats: customStats,
         reputation: customReputation,
       };
     }
@@ -237,9 +301,6 @@ export default function Create() {
 
     const reputation = classReputation[selected.name] ?? selected.reputation;
 
-    const baseStats = buildStats(selected.strengths, selected.secondary, selected.weaknesses);
-    const stats = classStats[selected.name] ?? baseStats;
-
     return {
       name: selected.name,
       nickname: selected.nickname ?? selected.name,
@@ -247,7 +308,6 @@ export default function Create() {
       displayName: getDisplayName(selected),
       description: selected.description,
       hp: rolledHp,
-      stats,
       reputation,
     };
   }, [
@@ -255,20 +315,10 @@ export default function Create() {
     customNickname,
     customClassName,
     customDescription,
-    customStats,
     customReputation,
     rolledHp,
     classReputation,
-    classStats,
   ]);
-
-  const getStatValue = (stat) => {
-    if (!currentClassDetails) return 0;
-    if (selectedClass === CUSTOM_CLASS.name) {
-      return rollingStats[stat] ?? customStats[stat];
-    }
-    return rollingClassStats[stat] ?? currentClassDetails.stats[stat];
-  };
 
   const getRepValue = (rep) => {
     if (!currentClassDetails) return 0;
@@ -283,6 +333,25 @@ export default function Create() {
       return 'Please enter a character name.';
     }
     if (step === 2) {
+      if (!race) {
+        return 'Choose a race to continue.';
+      }
+      if (race === 'Custom' && customRaceName.trim().length < 2) {
+        return 'Enter a custom race name.';
+      }
+      if (raceChoiceConfig.length) {
+        const missing = raceChoices.some((choice) => !choice);
+        if (missing) {
+          return 'Select all race bonuses before continuing.';
+        }
+      }
+    }
+    if (step === 3) {
+      if (!alignment) {
+        return 'Pick an alignment to continue.';
+      }
+    }
+    if (step === 4) {
       if (look.trim().length < 10) {
         return 'Tell us a bit more about your character appearance.';
       }
@@ -290,7 +359,7 @@ export default function Create() {
         return 'Please enter a custom gender or pick Male/Female.';
       }
     }
-    if (step === 3) {
+    if (step === 5) {
       if (!selectedClass) {
         return 'Choose a class to continue.';
       }
@@ -302,8 +371,12 @@ export default function Create() {
           return 'Describe your custom class (at least 10 characters).';
         }
       }
+      const missingAbilities = ABILITIES.some((ability) => (baseAbilityScores[ability] ?? 0) <= 0);
+      if (missingAbilities) {
+        return 'Assign all ability scores before continuing.';
+      }
     }
-    if (step === 4 && backstory.trim().length < 20) {
+    if (step === 6 && backstory.trim().length < 20) {
       return 'Give a short backstory (20 characters or more).';
     }
     return '';
@@ -312,28 +385,41 @@ export default function Create() {
   const isStepComplete = (stepNumber) => {
     if (stepNumber === 1) return name.trim().length >= 2;
     if (stepNumber === 2) {
+      if (!race) return false;
+      if (race === 'Custom' && customRaceName.trim().length < 2) return false;
+      if (raceChoiceConfig.length) {
+        return raceChoices.every((choice) => Boolean(choice));
+      }
+      return true;
+    }
+    if (stepNumber === 3) {
+      return Boolean(alignment);
+    }
+    if (stepNumber === 4) {
       const hasLook = look.trim().length >= 10;
       const hasGender = gender === 'Custom' ? genderCustom.trim().length > 0 : true;
       return hasLook && hasGender;
     }
-    if (stepNumber === 3) {
+    if (stepNumber === 5) {
       if (!selectedClass) return false;
       if (selectedClass === CUSTOM_CLASS.name) {
-        return (
-          customNickname.trim().length >= 2 &&
-          customClassName.trim().length >= 2 &&
-          customDescription.trim().length >= 10
-        );
+        if (
+          customNickname.trim().length < 2 ||
+          customClassName.trim().length < 2 ||
+          customDescription.trim().length < 10
+        ) {
+          return false;
+        }
       }
-      return true;
+      return ABILITIES.every((ability) => (baseAbilityScores[ability] ?? 0) > 0);
     }
-    if (stepNumber === 4) return backstory.trim().length >= 20;
+    if (stepNumber === 6) return backstory.trim().length >= 20;
     return false;
   };
 
   const maxCompletedStep = Math.max(
     0,
-    ...[1, 2, 3, 4].filter((stepNumber) => isStepComplete(stepNumber))
+    ...[1, 2, 3, 4, 5, 6].filter((stepNumber) => isStepComplete(stepNumber))
   );
 
   const nextStep = () => {
@@ -372,16 +458,36 @@ export default function Create() {
     setError('');
 
     const genderValue = gender === 'Custom' ? genderCustom.trim() : gender;
+    const raceValue = race === 'Custom' ? customRaceName.trim() : race;
+    const abilityProgress = {};
+    ABILITIES.forEach((ability) => {
+      abilityProgress[ability] = 0;
+    });
+    const skills = {};
+    const skillProgress = {};
+    SKILLS.forEach((skill) => {
+      skills[skill] = 0;
+      skillProgress[skill] = 0;
+    });
 
     const payload = {
       name: name.trim(),
+      race: raceValue,
+      alignment,
+      race_boosts: raceBoosts,
       look: look.trim(),
       gender: genderValue,
       class_name: currentClassDetails.displayName ?? currentClassDetails.name,
       class_description: currentClassDetails.description,
-      stats: currentClassDetails.stats,
+      stats: finalAbilityScores,
+      ability_scores: finalAbilityScores,
+      ability_progress: abilityProgress,
+      skills,
+      skill_progress: skillProgress,
+      skill_points: 0,
       reputation: currentClassDetails.reputation,
       hp: currentClassDetails.hp,
+      hp_current: currentClassDetails.hp,
       backstory: backstory.trim(),
     };
 
@@ -403,7 +509,7 @@ export default function Create() {
   const handleKeyDown = (event) => {
     if (event.key !== 'Enter') return;
     if (event.target.tagName === 'TEXTAREA') {
-      if (step === 2 && !event.shiftKey) {
+      if (step === 4 && !event.shiftKey) {
         event.preventDefault();
         if (step < TOTAL_STEPS) {
           nextStep();
@@ -450,6 +556,142 @@ export default function Create() {
             )}
 
             {step === 2 && (
+              <div className="grid gap-5 text-center">
+                <div className="grid gap-2.5">
+                  <span className="font-['Cinzel'] text-[1.5rem]">Choose your race</span>
+                  <div className="grid gap-3 max-[800px]:grid-cols-2 min-[801px]:grid-cols-4">
+                    {RACES.map((entry) => {
+                      const isActive = race === entry.name;
+                      return (
+                        <button
+                          key={entry.name}
+                          type="button"
+                          className={`rounded-full border bg-transparent px-4 py-2 text-sm font-semibold transition hover:-translate-y-0.5 ${
+                            isActive
+                              ? 'border-[rgba(214,179,106,0.7)] text-[var(--accent)]'
+                              : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                          }`}
+                          onClick={() => setRace(entry.name)}
+                        >
+                          {entry.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                {race === 'Custom' && (
+                  <input
+                    className="min-w-[min(520px,90vw)] border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
+                    type="text"
+                    value={customRaceName}
+                    onChange={(event) => setCustomRaceName(event.target.value)}
+                    maxLength={32}
+                    placeholder="Enter custom race name"
+                  />
+                )}
+                {raceConfig?.variants?.length ? (
+                  <div className="grid gap-2.5 text-center">
+                    <span className="text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
+                      Subrace bonus
+                    </span>
+                    <div className="flex flex-wrap justify-center gap-2">
+                      {raceConfig.variants.map((variant, index) => {
+                        const isActive = raceVariantIndex === index;
+                        return (
+                          <button
+                            key={variant.label}
+                            type="button"
+                            className={`rounded-full border bg-transparent px-4 py-2 text-xs font-semibold transition hover:-translate-y-0.5 ${
+                              isActive
+                                ? 'border-[rgba(214,179,106,0.7)] text-[var(--accent)]'
+                                : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                            }`}
+                            onClick={() => setRaceVariantIndex(index)}
+                          >
+                            {variant.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
+                {raceChoiceConfig.length ? (
+                  <div className="grid gap-3">
+                    {raceChoiceConfig.map((choice, index) => {
+                      const current = raceChoices[index];
+                      const used = raceChoices.filter(Boolean);
+                      const options = choice.options.filter((option) => {
+                        if (!raceHasUniqueChoices) return true;
+                        if (option === current) return true;
+                        return !used.includes(option);
+                      });
+                      return (
+                        <label key={`${choice.label}-${index}`} className="grid gap-2 text-center">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
+                            {choice.label ?? 'Choose ability'}
+                          </span>
+                          <select
+                            className="rounded-full border border-white/20 bg-[rgba(6,8,13,0.7)] px-4 py-2 text-sm text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                            value={current || ''}
+                            onChange={(event) => {
+                              const next = [...raceChoices];
+                              next[index] = event.target.value;
+                              setRaceChoices(next);
+                            }}
+                          >
+                            <option value="" disabled>
+                              Select ability
+                            </option>
+                            {options.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {race && (
+                  <p className="m-0 text-sm text-[var(--soft)]">
+                    Boosts:{' '}
+                    {Object.keys(raceBoosts).length
+                      ? Object.entries(raceBoosts)
+                          .map(([ability, amount]) => `+${amount} ${ability}`)
+                          .join(', ')
+                      : 'None'}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="grid gap-4 text-center">
+                <span className="font-['Cinzel'] text-[1.5rem]">Choose your alignment</span>
+                <div className="grid grid-cols-3 gap-3">
+                  {ALIGNMENTS.map((entry) => {
+                    const isActive = alignment === entry;
+                    return (
+                      <button
+                        key={entry}
+                        type="button"
+                        className={`rounded-xl border px-3 py-3 text-xs font-semibold uppercase tracking-[0.16em] transition hover:-translate-y-0.5 ${
+                          isActive
+                            ? 'border-[rgba(214,179,106,0.7)] text-[var(--accent)]'
+                            : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                        }`}
+                        onClick={() => setAlignment(entry)}
+                      >
+                        {entry}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {step === 4 && (
               <>
                 <label className="mb-5 grid gap-2.5 text-center">
                   <span className="font-['Cinzel'] text-[1.5rem]">
@@ -504,7 +746,7 @@ export default function Create() {
               </>
             )}
 
-            {step === 3 && (
+            {step === 5 && (
               <>
                 <div className="mb-4 grid gap-2.5 text-center">
                   <span className="font-['Cinzel'] text-[1.5rem]">
@@ -586,77 +828,6 @@ export default function Create() {
                                 maxLength={200}
                               />
                             </label>
-                            <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
-                              <div className="mb-1.5 flex items-center justify-between gap-3">
-                                <strong>Starting HP</strong>
-                                <button
-                                  type="button"
-                                  className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                  onClick={rerollHp}
-                                >
-                                  Reroll
-                                </button>
-                              </div>
-                              <p className="m-0 text-lg">{rollingHp ? hpDisplay : currentClassDetails.hp}</p>
-                            </div>
-                            <div className="mt-1.5 flex items-center justify-between gap-3">
-                              <h4 className="text-sm">Starting Stats</h4>
-                              <button
-                                type="button"
-                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                onClick={rollAllStats}
-                              >
-                                Roll all
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-1 gap-x-4 gap-y-2 min-[801px]:grid-cols-2">
-                              {STATS.map((stat) => (
-                                <div className="flex items-center justify-between text-sm" key={stat}>
-                                  <span>{stat}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span style={getValueStyle(getStatValue(stat), 5)}>
-                                      {getStatValue(stat)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                      onClick={() => rollSingleStat(stat)}
-                                    >
-                                      Roll
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                            <div className="mt-1.5 flex items-center justify-between gap-3">
-                              <h4 className="text-sm">Starting Reputation</h4>
-                              <button
-                                type="button"
-                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                onClick={rollAllReputation}
-                              >
-                                Roll all
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-1 gap-x-4 gap-y-2 min-[801px]:grid-cols-2">
-                              {REPUTATION.map((rep) => (
-                                <div className="flex items-center justify-between text-sm" key={rep}>
-                                  <span>{rep}</span>
-                                  <div className="flex items-center gap-2">
-                                    <span style={getValueStyle(getRepValue(rep), 20)}>
-                                      {getRepValue(rep)}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                      onClick={() => rollSingleReputation(rep)}
-                                    >
-                                      Roll
-                                    </button>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
                           </div>
                         ) : (
                           <>
@@ -667,67 +838,151 @@ export default function Create() {
                               </span>
                             </div>
                             <p className="m-0 text-sm text-[var(--soft)]">{currentClassDetails.description}</p>
-                            <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
-                              <div className="mb-1.5 flex items-center justify-between gap-3">
-                                <strong>Starting HP</strong>
+                          </>
+                        )}
+
+                        <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+                          <div className="mb-1.5 flex items-center justify-between gap-3">
+                            <strong>Starting HP</strong>
+                            <button
+                              type="button"
+                              className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                              onClick={rerollHp}
+                            >
+                              Reroll
+                            </button>
+                          </div>
+                          <p className="m-0 text-lg">{rollingHp ? hpDisplay : currentClassDetails.hp}</p>
+                        </div>
+
+                        <div className="mt-1.5 grid gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <h4 className="text-sm">Ability Scores</h4>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition hover:-translate-y-0.5 ${
+                                  abilityMethod === 'roll'
+                                    ? 'border-[rgba(214,179,106,0.6)] text-[var(--accent)]'
+                                    : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                                }`}
+                                onClick={() => setAbilityMethod('roll')}
+                              >
+                                Roll 4d6
+                              </button>
+                              <button
+                                type="button"
+                                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition hover:-translate-y-0.5 ${
+                                  abilityMethod === 'standard'
+                                    ? 'border-[rgba(214,179,106,0.6)] text-[var(--accent)]'
+                                    : 'border-white/20 text-[var(--ink)] hover:border-white/40'
+                                }`}
+                                onClick={() => setAbilityMethod('standard')}
+                              >
+                                Standard Array
+                              </button>
+                              {abilityMethod === 'roll' && (
                                 <button
                                   type="button"
                                   className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                  onClick={rerollHp}
+                                  onClick={rollAllAbilities}
                                 >
-                                  Reroll
+                                  Roll all
                                 </button>
-                              </div>
-                              <p className="m-0 text-lg">{rollingHp ? hpDisplay : currentClassDetails.hp}</p>
+                              )}
                             </div>
-                            <div className="mt-1.5 flex items-center justify-between gap-3">
-                              <h4 className="text-sm">Starting Stats</h4>
-                              <button
-                                type="button"
-                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                onClick={rollClassStats}
-                              >
-                                Roll all
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
-                              {STATS.map((stat) => (
-                                <div className="flex justify-between text-sm" key={stat}>
-                                  <span>{stat}</span>
-                                  <span style={getValueStyle(getStatValue(stat), 5)}>
-                                    {getStatValue(stat)}
-                                  </span>
+                          </div>
+                          <div className="grid gap-2">
+                            {ABILITIES.map((ability) => {
+                              const baseValue = baseAbilityScores[ability] ?? 0;
+                              const boostValue = raceBoosts[ability] ?? 0;
+                              const finalValue = finalAbilityScores[ability] ?? 0;
+                              const mod = getAbilityModifier(finalValue);
+                              const assigned = Object.entries(abilityScores)
+                                .filter(([key]) => key !== ability)
+                                .map(([, value]) => value)
+                                .filter(Boolean);
+                              const options = STANDARD_ARRAY.filter(
+                                (value) => !assigned.includes(value) || value === abilityScores[ability]
+                              );
+
+                              return (
+                                <div key={ability} className="flex items-center justify-between text-sm">
+                                  <span>{ability}</span>
+                                  <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-[var(--soft)]">
+                                    {abilityMethod === 'standard' ? (
+                                      <select
+                                        className="rounded-full border border-white/20 bg-[rgba(6,8,13,0.7)] px-3 py-1 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                                        value={abilityScores[ability] || ''}
+                                        onChange={(event) =>
+                                          setAbilityScores((prev) => ({
+                                            ...prev,
+                                            [ability]: Number(event.target.value),
+                                          }))
+                                        }
+                                      >
+                                        <option value="" disabled>
+                                          --
+                                        </option>
+                                        {options.map((value) => (
+                                          <option key={`${ability}-${value}`} value={value}>
+                                            {value}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    ) : (
+                                      <>
+                                        <span className="w-6 text-right text-[var(--ink)]">
+                                          {baseValue || '--'}
+                                        </span>
+                                        <button
+                                          type="button"
+                                          className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                          onClick={() => rollSingleAbility(ability)}
+                                        >
+                                          Roll
+                                        </button>
+                                      </>
+                                    )}
+                                    {boostValue ? (
+                                      <span className="text-[var(--accent)]">+{boostValue}</span>
+                                    ) : null}
+                                    <span className="text-[var(--ink)]">
+                                      {finalValue || '--'} ({mod >= 0 ? `+${mod}` : mod})
+                                    </span>
+                                  </div>
                                 </div>
-                              ))}
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="mt-1.5 flex items-center justify-between gap-3">
+                          <h4 className="text-sm">Starting Reputation</h4>
+                          <button
+                            type="button"
+                            className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                            onClick={rollReputationSet}
+                          >
+                            Roll all
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
+                          {REPUTATION.map((rep) => (
+                            <div className="flex justify-between text-sm" key={rep}>
+                              <span>{rep}</span>
+                              <span style={getValueStyle(getRepValue(rep), 20)}>
+                                {getRepValue(rep)}
+                              </span>
                             </div>
-                            <div className="mt-1.5 flex items-center justify-between gap-3">
-                              <h4 className="text-sm">Starting Reputation</h4>
-                              <button
-                                type="button"
-                                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                                onClick={rollClassReputation}
-                              >
-                                Roll all
-                              </button>
-                            </div>
-                            <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
-                              {REPUTATION.map((rep) => (
-                                <div className="flex justify-between text-sm" key={rep}>
-                                  <span>{rep}</span>
-                                  <span style={getValueStyle(getRepValue(rep), 20)}>
-                                    {getRepValue(rep)}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          </>
-                        )}
+                          ))}
+                        </div>
                       </>
                     ) : (
                       <>
                         <h3 className="text-lg">Class details</h3>
                         <p className="m-0 text-sm text-[var(--soft)]">
-                          Select a class to see its stats, HP, and reputation.
+                          Select a class to see its description, HP, and reputation.
                         </p>
                       </>
                     )}
@@ -736,7 +991,7 @@ export default function Create() {
               </>
             )}
 
-            {step === 4 && (
+            {step === 6 && (
               <label className="mb-5 grid gap-2.5 text-center">
                 <span className="font-['Cinzel'] text-[1.5rem]">Tell us your backstory</span>
                 <textarea
@@ -784,7 +1039,7 @@ export default function Create() {
             {error && <p className="mt-3 text-center font-semibold text-[var(--danger)]">{error}</p>}
 
             <div className="fixed bottom-0 left-0 right-0 z-20 flex flex-wrap justify-center gap-4 border-t border-white/10 bg-[rgba(5,6,7,0.78)] px-[6vw] py-4 backdrop-blur">
-              {['Name', 'Looks', 'Class', 'Backstory'].map((label, index) => {
+              {['Name', 'Race', 'Alignment', 'Looks', 'Class', 'Backstory'].map((label, index) => {
                 const stepNumber = index + 1;
                 const isActive = step === stepNumber;
                 const isCompleted = isStepComplete(stepNumber) && stepNumber !== step;
