@@ -636,14 +636,33 @@ export default function Campaign() {
                           key={quest.id}
                           className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
                         >
-                          <div className="flex justify-between gap-2 font-semibold">
-                            <span>{quest.title}</span>
-                            <span className="inline-flex items-center rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
-                              {quest.status}
-                            </span>
-                          </div>
-                          <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
-                          <span className="text-sm font-semibold text-[var(--accent)]">{quest.xp} XP</span>
+                          <details className="group" open>
+                            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                              <div className="grid gap-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="font-semibold">{quest.title}</span>
+                                  <span className="text-[var(--soft)] transition group-open:rotate-180">
+                                    <svg
+                                      viewBox="0 0 24 24"
+                                      className="h-4 w-4"
+                                      fill="none"
+                                      stroke="currentColor"
+                                      strokeWidth="1.6"
+                                    >
+                                      <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                                    </svg>
+                                  </span>
+                                </div>
+                                <span className="inline-flex w-fit items-center rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs font-semibold leading-none text-[var(--accent-2)]">
+                                  {quest.status}
+                                </span>
+                              </div>
+                            </summary>
+                            <div className="mt-2 grid gap-1.5">
+                              <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
+                              <span className="text-sm font-semibold text-[var(--accent)]">{quest.xp} XP</span>
+                            </div>
+                          </details>
                         </div>
                       ))}
                     </div>
@@ -655,9 +674,9 @@ export default function Campaign() {
                           key={bounty.id}
                           className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
                         >
-                          <div className="flex justify-between gap-2 font-semibold">
-                            <span>{bounty.title}</span>
-                            <span className="inline-flex items-center rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
+                          <div className="grid gap-1">
+                            <span className="font-semibold">{bounty.title}</span>
+                            <span className="inline-flex w-fit items-center rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs font-semibold leading-none text-[var(--accent-2)]">
                               {bounty.status}
                             </span>
                           </div>
@@ -673,25 +692,42 @@ export default function Campaign() {
                           key={rumor.id}
                           className="grid gap-2 rounded-[14px] border border-[rgba(214,179,106,0.3)] bg-[rgba(14,11,3,0.6)] p-3"
                         >
-                          <div className="flex flex-wrap items-center justify-between gap-2 font-semibold">
-                            <span>{rumor.title}</span>
-                            <div className="flex gap-2">
-                              <span className="rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
-                                Lvl {rumor.level}
-                              </span>
-                              <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-[var(--soft)]">
-                                {rumor.xp} XP
-                              </span>
+                          <details className="group" open>
+                            <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-semibold">{rumor.title}</span>
+                                <span className="text-[var(--soft)] transition group-open:rotate-180">
+                                  <svg
+                                    viewBox="0 0 24 24"
+                                    className="h-4 w-4"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    strokeWidth="1.6"
+                                  >
+                                    <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                                  </svg>
+                                </span>
+                              </div>
+                              <div className="mt-1 flex flex-wrap items-center gap-2 font-semibold">
+                                <span className="rounded-full border border-[rgba(116,199,194,0.7)] px-2 py-0.5 text-xs text-[var(--accent-2)]">
+                                  Lvl {rumor.level}
+                                </span>
+                                <span className="rounded-full border border-white/20 px-2 py-0.5 text-xs text-[var(--soft)]">
+                                  {rumor.xp} XP
+                                </span>
+                              </div>
+                            </summary>
+                            <div className="mt-2 grid gap-2">
+                              <p className="m-0 text-sm text-[var(--soft)]">{rumor.summary}</p>
+                              {rumor.notes?.length ? (
+                                <ul className="m-0 list-disc pl-5 text-xs text-[var(--soft)]">
+                                  {rumor.notes.map((note) => (
+                                    <li key={note}>{note}</li>
+                                  ))}
+                                </ul>
+                              ) : null}
                             </div>
-                          </div>
-                          <p className="m-0 text-sm text-[var(--soft)]">{rumor.summary}</p>
-                          {rumor.notes?.length ? (
-                            <ul className="m-0 list-disc pl-5 text-xs text-[var(--soft)]">
-                              {rumor.notes.map((note) => (
-                                <li key={note}>{note}</li>
-                              ))}
-                            </ul>
-                          ) : null}
+                          </details>
                         </div>
                       ))}
                     </div>
