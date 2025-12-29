@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   CLASSES,
@@ -45,9 +45,16 @@ export default function Create() {
   });
   const [classReputation, setClassReputation] = useState(() => ({}));
   const [rolledHp, setRolledHp] = useState(() => rollHpValue());
+  const [hpDisplay, setHpDisplay] = useState(() => rollHpValue());
+  const [rollingStats, setRollingStats] = useState({});
+  const [rollingReputation, setRollingReputation] = useState({});
+  const [rollingClassStats, setRollingClassStats] = useState({});
+  const [rollingClassReputation, setRollingClassReputation] = useState({});
+  const [rollingHp, setRollingHp] = useState(false);
   const [backstory, setBackstory] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const timersRef = useRef({ intervals: new Set(), timeouts: new Set() });
 
   const classOptions = useMemo(() => [...CLASSES, CUSTOM_CLASS], []);
 
@@ -58,47 +65,124 @@ export default function Create() {
   };
 
   const rollStatValue = () => rollWithOpposedDice(6);
-  const rollRepValue = () => rollWithOpposedDice(20);
-  const rerollHp = () => setRolledHp(rollHpValue());
+  const rollRepValue = () => rollInRange(-20, 20);
 
-  const rollStatsSet = () => {
-    const rolled = {};
-    STATS.forEach((stat) => {
-      rolled[stat] = rollStatValue();
-    });
-    return rolled;
+  const trackInterval = (id) => {
+    timersRef.current.intervals.add(id);
   };
 
-  const rollReputationSet = () => {
-    const rolled = {};
-    REPUTATION.forEach((rep) => {
-      rolled[rep] = rollRepValue();
-    });
-    return rolled;
+  const trackTimeout = (id) => {
+    timersRef.current.timeouts.add(id);
+  };
+
+  const clearTrackedInterval = (id) => {
+    clearInterval(id);
+    timersRef.current.intervals.delete(id);
+  };
+
+  const clearTrackedTimeout = (id) => {
+    clearTimeout(id);
+    timersRef.current.timeouts.delete(id);
+  };
+
+  useEffect(() => {
+    return () => {
+      timersRef.current.intervals.forEach((id) => clearInterval(id));
+      timersRef.current.timeouts.forEach((id) => clearTimeout(id));
+    };
+  }, []);
+
+  const animateRollSet = (keys, randomFn, setRollingMap, applyFinal) => {
+    const intervalId = setInterval(() => {
+      setRollingMap((prev) => {
+        const next = { ...prev };
+        keys.forEach((key) => {
+          next[key] = randomFn();
+        });
+        return next;
+      });
+    }, 80);
+    trackInterval(intervalId);
+
+    const timeoutId = setTimeout(() => {
+      clearTrackedInterval(intervalId);
+      const final = {};
+      keys.forEach((key) => {
+        final[key] = randomFn();
+      });
+      applyFinal(final);
+      setRollingMap((prev) => {
+        const next = { ...prev };
+        keys.forEach((key) => {
+          delete next[key];
+        });
+        return next;
+      });
+      clearTrackedTimeout(timeoutId);
+    }, 1000);
+    trackTimeout(timeoutId);
+  };
+
+  const rerollHp = () => {
+    setRollingHp(true);
+    const intervalId = setInterval(() => {
+      setHpDisplay(rollHpValue());
+    }, 80);
+    trackInterval(intervalId);
+
+    const timeoutId = setTimeout(() => {
+      clearTrackedInterval(intervalId);
+      const final = rollHpValue();
+      setRolledHp(final);
+      setHpDisplay(final);
+      setRollingHp(false);
+      clearTrackedTimeout(timeoutId);
+    }, 1000);
+    trackTimeout(timeoutId);
   };
 
   const rollAllStats = () => {
-    setCustomStats(rollStatsSet());
+    animateRollSet(STATS, rollStatValue, setRollingStats, (final) => {
+      setCustomStats(final);
+    });
   };
 
   const rollAllReputation = () => {
-    setCustomReputation(rollReputationSet());
+    animateRollSet(REPUTATION, rollRepValue, setRollingReputation, (final) => {
+      setCustomReputation(final);
+    });
+  };
+
+  const rollSingleStat = (stat) => {
+    animateRollSet([stat], rollStatValue, setRollingStats, (final) => {
+      setCustomStats((prev) => ({ ...prev, ...final }));
+    });
+  };
+
+  const rollSingleReputation = (rep) => {
+    animateRollSet([rep], rollRepValue, setRollingReputation, (final) => {
+      setCustomReputation((prev) => ({ ...prev, ...final }));
+    });
   };
 
   const rollClassReputation = () => {
     if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
-    setClassReputation((prev) => ({
-      ...prev,
-      [selectedClass]: rollReputationSet(),
-    }));
+    animateRollSet(REPUTATION, rollRepValue, setRollingClassReputation, (final) => {
+      setClassReputation((prev) => ({
+        ...prev,
+        [selectedClass]: final,
+      }));
+    });
   };
 
   const rollClassStats = () => {
     if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
-    setClassStats((prev) => ({
-      ...prev,
-      [selectedClass]: rollStatsSet(),
-    }));
+    animateRollSet(STATS, rollStatValue, setRollingClassStats, (final) => {
+      setClassStats((prev) => ({
+        ...prev,
+        [selectedClass]: final,
+      }));
+    });
   };
 
   useEffect(() => {
@@ -121,7 +205,14 @@ export default function Create() {
 
   useEffect(() => {
     if (!selectedClass) return;
-    setRolledHp(rollHpValue());
+    const nextHp = rollHpValue();
+    setRolledHp(nextHp);
+    setHpDisplay(nextHp);
+    setRollingHp(false);
+    setRollingStats({});
+    setRollingReputation({});
+    setRollingClassStats({});
+    setRollingClassReputation({});
   }, [selectedClass]);
 
   const currentClassDetails = useMemo(() => {
@@ -170,6 +261,22 @@ export default function Create() {
     classReputation,
     classStats,
   ]);
+
+  const getStatValue = (stat) => {
+    if (!currentClassDetails) return 0;
+    if (selectedClass === CUSTOM_CLASS.name) {
+      return rollingStats[stat] ?? customStats[stat];
+    }
+    return rollingClassStats[stat] ?? currentClassDetails.stats[stat];
+  };
+
+  const getRepValue = (rep) => {
+    if (!currentClassDetails) return 0;
+    if (selectedClass === CUSTOM_CLASS.name) {
+      return rollingReputation[rep] ?? customReputation[rep];
+    }
+    return rollingClassReputation[rep] ?? currentClassDetails.reputation[rep];
+  };
 
   const validateStep = () => {
     if (step === 1 && name.trim().length < 2) {
@@ -490,7 +597,7 @@ export default function Create() {
                                   Reroll
                                 </button>
                               </div>
-                              <p className="m-0 text-lg">{currentClassDetails.hp}</p>
+                              <p className="m-0 text-lg">{rollingHp ? hpDisplay : currentClassDetails.hp}</p>
                             </div>
                             <div className="mt-1.5 flex items-center justify-between gap-3">
                               <h4 className="text-sm">Starting Stats</h4>
@@ -502,13 +609,22 @@ export default function Create() {
                                 Roll all
                               </button>
                             </div>
-                            <div className="grid grid-cols-1 gap-x-3 gap-y-2 min-[801px]:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-x-4 gap-y-2 min-[801px]:grid-cols-2">
                               {STATS.map((stat) => (
-                                <div className="flex justify-between text-sm" key={stat}>
+                                <div className="flex items-center justify-between text-sm" key={stat}>
                                   <span>{stat}</span>
-                                  <span style={getValueStyle(customStats[stat], 5)}>
-                                    {customStats[stat]}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span style={getValueStyle(getStatValue(stat), 5)}>
+                                      {getStatValue(stat)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                      onClick={() => rollSingleStat(stat)}
+                                    >
+                                      Roll
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -522,13 +638,22 @@ export default function Create() {
                                 Roll all
                               </button>
                             </div>
-                            <div className="grid grid-cols-1 gap-x-3 gap-y-2 min-[801px]:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-x-4 gap-y-2 min-[801px]:grid-cols-2">
                               {REPUTATION.map((rep) => (
-                                <div className="flex justify-between text-sm" key={rep}>
+                                <div className="flex items-center justify-between text-sm" key={rep}>
                                   <span>{rep}</span>
-                                  <span style={getValueStyle(customReputation[rep], 20)}>
-                                    {customReputation[rep]}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span style={getValueStyle(getRepValue(rep), 20)}>
+                                      {getRepValue(rep)}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                      onClick={() => rollSingleReputation(rep)}
+                                    >
+                                      Roll
+                                    </button>
+                                  </div>
                                 </div>
                               ))}
                             </div>
@@ -553,7 +678,7 @@ export default function Create() {
                                   Reroll
                                 </button>
                               </div>
-                              <p className="m-0 text-lg">{currentClassDetails.hp}</p>
+                              <p className="m-0 text-lg">{rollingHp ? hpDisplay : currentClassDetails.hp}</p>
                             </div>
                             <div className="mt-1.5 flex items-center justify-between gap-3">
                               <h4 className="text-sm">Starting Stats</h4>
@@ -569,8 +694,8 @@ export default function Create() {
                               {STATS.map((stat) => (
                                 <div className="flex justify-between text-sm" key={stat}>
                                   <span>{stat}</span>
-                                  <span style={getValueStyle(currentClassDetails.stats[stat], 5)}>
-                                    {currentClassDetails.stats[stat]}
+                                  <span style={getValueStyle(getStatValue(stat), 5)}>
+                                    {getStatValue(stat)}
                                   </span>
                                 </div>
                               ))}
@@ -589,8 +714,8 @@ export default function Create() {
                               {REPUTATION.map((rep) => (
                                 <div className="flex justify-between text-sm" key={rep}>
                                   <span>{rep}</span>
-                                  <span style={getValueStyle(currentClassDetails.reputation[rep], 20)}>
-                                    {currentClassDetails.reputation[rep]}
+                                  <span style={getValueStyle(getRepValue(rep), 20)}>
+                                    {getRepValue(rep)}
                                   </span>
                                 </div>
                               ))}
