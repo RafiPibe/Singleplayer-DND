@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { CLASSES, CUSTOM_CLASS, REPUTATION, HP_RANGE } from '../data/classes.js';
-import { ABILITIES, STANDARD_ARRAY, SKILLS, getAbilityModifier } from '../data/abilities.js';
+import { ABILITIES, STANDARD_ARRAY, SKILLS, getAbilityModifier, getSaveModifier } from '../data/abilities.js';
 import { RACES } from '../data/races.js';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
@@ -14,6 +14,7 @@ const rollAbilityScore = () => {
   const rolls = Array.from({ length: 4 }, () => rollDie(6)).sort((a, b) => a - b);
   return rolls.slice(1).reduce((sum, value) => sum + value, 0);
 };
+const SAVE_PROFICIENCY_BONUS = 2;
 
 const ALIGNMENTS = [
   'Lawful Good',
@@ -51,6 +52,15 @@ export default function Create() {
     });
     return base;
   });
+  const [saveRolls, setSaveRolls] = useState(() => {
+    const base = {};
+    ABILITIES.forEach((ability) => {
+      base[ability] = 0;
+    });
+    return base;
+  });
+  const [customSavePrimary, setCustomSavePrimary] = useState('');
+  const [customSaveSecondary, setCustomSaveSecondary] = useState('');
   const [customReputation, setCustomReputation] = useState(() => {
     const base = {};
     REPUTATION.forEach((rep) => {
@@ -62,6 +72,7 @@ export default function Create() {
   const [rolledHp, setRolledHp] = useState(() => rollHpValue());
   const [hpDisplay, setHpDisplay] = useState(() => rollHpValue());
   const [rollingAbilities, setRollingAbilities] = useState({});
+  const [rollingSaveRolls, setRollingSaveRolls] = useState({});
   const [rollingReputation, setRollingReputation] = useState({});
   const [rollingClassReputation, setRollingClassReputation] = useState({});
   const [rollingHp, setRollingHp] = useState(false);
@@ -118,6 +129,7 @@ export default function Create() {
   };
 
   const rollRepValue = () => rollDie(6) - rollDie(6);
+  const rollSaveValue = () => rollInRange(1, 20);
 
   const trackInterval = (id) => {
     timersRef.current.intervals.add(id);
@@ -264,6 +276,18 @@ export default function Create() {
     });
   };
 
+  const rollAllSavingThrows = () => {
+    animateRollSet(ABILITIES, rollSaveValue, setRollingSaveRolls, (final) => {
+      setSaveRolls((prev) => ({ ...prev, ...final }));
+    });
+  };
+
+  const rollSingleSavingThrow = (ability) => {
+    animateRollSet([ability], rollSaveValue, setRollingSaveRolls, (final) => {
+      setSaveRolls((prev) => ({ ...prev, ...final }));
+    });
+  };
+
   useEffect(() => {
     if (selectedClass === CUSTOM_CLASS.name) {
       setError('');
@@ -278,6 +302,16 @@ export default function Create() {
     setRollingHp(false);
     setRollingReputation({});
     setRollingClassReputation({});
+    setRollingSaveRolls({});
+    setSaveRolls((prev) => {
+      const next = { ...prev };
+      ABILITIES.forEach((ability) => {
+        next[ability] = 0;
+      });
+      return next;
+    });
+    setCustomSavePrimary('');
+    setCustomSaveSecondary('');
   }, [selectedClass]);
 
   const currentClassDetails = useMemo(() => {
@@ -293,6 +327,7 @@ export default function Create() {
         description,
         hp: rolledHp,
         reputation: customReputation,
+        saveProficiencies: [customSavePrimary, customSaveSecondary].filter(Boolean),
       };
     }
 
@@ -309,6 +344,7 @@ export default function Create() {
       description: selected.description,
       hp: rolledHp,
       reputation,
+      saveProficiencies: selected.saveProficiencies ?? [],
     };
   }, [
     selectedClass,
@@ -316,9 +352,13 @@ export default function Create() {
     customClassName,
     customDescription,
     customReputation,
+    customSavePrimary,
+    customSaveSecondary,
     rolledHp,
     classReputation,
   ]);
+
+  const saveProficiencies = currentClassDetails?.saveProficiencies ?? [];
 
   const getRepValue = (rep) => {
     if (!currentClassDetails) return 0;
@@ -370,10 +410,20 @@ export default function Create() {
         if (customDescription.trim().length < 10) {
           return 'Describe your custom class (at least 10 characters).';
         }
+        if (!customSavePrimary || !customSaveSecondary) {
+          return 'Select primary and secondary saving throws.';
+        }
+        if (customSavePrimary === customSaveSecondary) {
+          return 'Choose two different saving throw proficiencies.';
+        }
       }
       const missingAbilities = ABILITIES.some((ability) => (baseAbilityScores[ability] ?? 0) <= 0);
       if (missingAbilities) {
         return 'Assign all ability scores before continuing.';
+      }
+      const missingSaves = ABILITIES.some((ability) => (saveRolls[ability] ?? 0) <= 0);
+      if (missingSaves) {
+        return 'Roll all saving throws before continuing.';
       }
     }
     if (step === 6 && backstory.trim().length < 20) {
@@ -410,8 +460,12 @@ export default function Create() {
         ) {
           return false;
         }
+        if (!customSavePrimary || !customSaveSecondary) return false;
+        if (customSavePrimary === customSaveSecondary) return false;
       }
-      return ABILITIES.every((ability) => (baseAbilityScores[ability] ?? 0) > 0);
+      const hasAbilities = ABILITIES.every((ability) => (baseAbilityScores[ability] ?? 0) > 0);
+      const hasSaves = ABILITIES.every((ability) => (saveRolls[ability] ?? 0) > 0);
+      return hasAbilities && hasSaves;
     }
     if (stepNumber === 6) return backstory.trim().length >= 20;
     return false;
@@ -485,6 +539,8 @@ export default function Create() {
       skills,
       skill_progress: skillProgress,
       skill_points: 0,
+      saving_throws: saveRolls,
+      save_proficiencies: saveProficiencies,
       reputation: currentClassDetails.reputation,
       hp: currentClassDetails.hp,
       hp_current: currentClassDetails.hp,
@@ -950,6 +1006,92 @@ export default function Create() {
                                         Roll
                                       </button>
                                     ) : null}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <div className="mt-1.5 grid gap-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <h4 className="text-sm">Saving Throws</h4>
+                            <button
+                              type="button"
+                              className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                              onClick={rollAllSavingThrows}
+                            >
+                              Roll all
+                            </button>
+                          </div>
+                          {selectedClass === CUSTOM_CLASS.name && (
+                            <div className="grid gap-2">
+                              <div className="grid grid-cols-2 gap-2 text-xs text-[var(--soft)]">
+                                <label className="grid gap-2">
+                                  <span className="uppercase tracking-[0.2em]">Primary</span>
+                                  <select
+                                    className="rounded-full border border-white/20 bg-[rgba(6,8,13,0.7)] px-3 py-1 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                                    value={customSavePrimary}
+                                    onChange={(event) => setCustomSavePrimary(event.target.value)}
+                                  >
+                                    <option value="">Select</option>
+                                    {ABILITIES.map((ability) => (
+                                      <option key={`save-primary-${ability}`} value={ability}>
+                                        {ability}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="grid gap-2">
+                                  <span className="uppercase tracking-[0.2em]">Secondary</span>
+                                  <select
+                                    className="rounded-full border border-white/20 bg-[rgba(6,8,13,0.7)] px-3 py-1 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                                    value={customSaveSecondary}
+                                    onChange={(event) => setCustomSaveSecondary(event.target.value)}
+                                  >
+                                    <option value="">Select</option>
+                                    {ABILITIES.filter((ability) => ability !== customSavePrimary).map((ability) => (
+                                      <option key={`save-secondary-${ability}`} value={ability}>
+                                        {ability}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </label>
+                              </div>
+                            </div>
+                          )}
+                          <div className="grid gap-2">
+                            {ABILITIES.map((ability) => {
+                              const rollValue = rollingSaveRolls[ability] ?? saveRolls[ability];
+                              const saveMod = rollValue > 0 ? getSaveModifier(rollValue) : 0;
+                              const proficient = saveProficiencies.includes(ability);
+                              const total =
+                                rollValue > 0 ? saveMod + (proficient ? SAVE_PROFICIENCY_BONUS : 0) : null;
+                              const totalDisplay =
+                                total === null ? '--' : total >= 0 ? `+${total}` : total;
+                              const modDisplay = saveMod >= 0 ? `+${saveMod}` : saveMod;
+                              const rollDisplay =
+                                rollValue > 0 ? `${rollValue} (${modDisplay})` : '--';
+                              return (
+                                <div key={`save-${ability}`} className="flex items-center justify-between text-sm">
+                                  <div className="flex items-center gap-2">
+                                    <span>{ability}</span>
+                                    {proficient ? (
+                                      <span className="rounded-full border border-[rgba(214,179,106,0.6)] px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                                        Proficient
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                  <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-[var(--soft)]">
+                                    <span className="text-right text-[var(--ink)]">{rollDisplay}</span>
+                                    <button
+                                      type="button"
+                                      className="rounded-full border border-white/20 bg-transparent px-2.5 py-1 text-[0.7rem] font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                                      onClick={() => rollSingleSavingThrow(ability)}
+                                    >
+                                      Roll
+                                    </button>
+                                    <span className="text-[var(--ink)]">{totalDisplay}</span>
                                   </div>
                                 </div>
                               );

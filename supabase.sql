@@ -14,6 +14,8 @@ create table if not exists public.campaigns (
   skills jsonb not null default '{}'::jsonb,
   skill_progress jsonb not null default '{}'::jsonb,
   skill_points integer not null default 0,
+  saving_throws jsonb not null default '{}'::jsonb,
+  save_proficiencies jsonb not null default '[]'::jsonb,
   reputation jsonb not null,
   hp integer not null,
   hp_current integer,
@@ -37,6 +39,8 @@ alter table public.campaigns add column if not exists ability_progress jsonb not
 alter table public.campaigns add column if not exists skills jsonb not null default '{}'::jsonb;
 alter table public.campaigns add column if not exists skill_progress jsonb not null default '{}'::jsonb;
 alter table public.campaigns add column if not exists skill_points integer not null default 0;
+alter table public.campaigns add column if not exists saving_throws jsonb not null default '{}'::jsonb;
+alter table public.campaigns add column if not exists save_proficiencies jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists hp_current integer;
 alter table public.campaigns add column if not exists buffs jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists messages jsonb not null default '[]'::jsonb;

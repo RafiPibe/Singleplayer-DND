@@ -8,6 +8,7 @@ import {
   SKILLS_BY_ABILITY,
   getAbilityModifier,
   getAbilityRequirement,
+  getSaveModifier,
 } from '../data/abilities.js';
 
 const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
@@ -315,206 +316,92 @@ const DEFAULT_SPELLBOOK = [
 ];
 
 const CLASS_SPELLBOOKS = {
-  Vanguard: [
+  Artificer: [
     {
-      id: 'protection',
-      label: 'Protection',
+      id: 'alchemy',
+      label: 'Alchemy',
       spells: [
         {
-          id: 'van-1',
-          name: 'Shield Ward',
+          id: 'art-1',
+          name: 'Voltaic Brew',
           roll: '1d6',
-          description: 'Raise a warding barrier that absorbs the next strike.',
+          description: 'Unleash a charged concoction that crackles on impact.',
         },
         {
-          id: 'van-2',
-          name: 'Oath of Bulwark',
-          roll: '1d8',
-          description: 'Hold the line, granting allies steadier footing.',
+          id: 'art-2',
+          name: 'Quickseal Tonic',
+          roll: '1d4',
+          description: 'Seal fractures in armor and restore cohesion.',
         },
       ],
     },
+    {
+      id: 'utility',
+      label: 'Utility',
+      spells: [
+        {
+          id: 'art-3',
+          name: 'Arcane Toolkit',
+          roll: '1d8',
+          description: 'Conjure spectral tools to dismantle wards or locks.',
+        },
+        {
+          id: 'art-4',
+          name: 'Glyph Beacon',
+          roll: '1d4',
+          description: 'Drop a beacon that guides allies through danger.',
+        },
+      ],
+    },
+  ],
+  Barbarian: [
     {
       id: 'valor',
       label: 'Valor',
       spells: [
         {
-          id: 'van-3',
-          name: 'Rallying Cry',
-          roll: '1d4',
-          description: 'A battle shout that steels resolve and sharpens focus.',
-        },
-        {
-          id: 'van-4',
-          name: 'Searing Brand',
+          id: 'bar-1',
+          name: 'Rage Surge',
           roll: '1d8',
-          description: 'Mark a foe with a blazing sigil that flares on impact.',
+          description: 'Ignite a primal surge that shakes the battlefield.',
         },
-      ],
-    },
-  ],
-  Whisper: [
-    {
-      id: 'shadow',
-      label: 'Shadow',
-      spells: [
         {
-          id: 'wh-1',
-          name: 'Smoke Step',
+          id: 'bar-2',
+          name: 'Warhowl',
           roll: '1d6',
-          description: 'Slip through a veil of smoke and reposition in silence.',
-        },
-        {
-          id: 'wh-2',
-          name: 'Night Slice',
-          roll: '1d4',
-          description: 'A shadow-laced strike that leaves no trace.',
+          description: 'A thunderous howl that unsettles enemies.',
         },
       ],
     },
     {
-      id: 'trickery',
-      label: 'Trickery',
+      id: 'earth',
+      label: 'Earth',
       spells: [
         {
-          id: 'wh-3',
-          name: 'Lockwhisper',
-          roll: '1d20',
-          description: 'Coax a stubborn lock open with a whispered incantation.',
-        },
-        {
-          id: 'wh-4',
-          name: 'Feign',
-          roll: '1d6',
-          description: 'Cloak intent and misdirect a target with a false tell.',
-        },
-      ],
-    },
-  ],
-  Spellweaver: [
-    {
-      id: 'arcane',
-      label: 'Magic',
-      spells: [
-        {
-          id: 'sw-1',
-          name: 'Arcane Bolt',
-          roll: '1d8',
-          description: 'Launch a focused bolt of raw arcane energy.',
-        },
-        {
-          id: 'sw-2',
-          name: 'Reality Stitch',
-          roll: '1d6',
-          description: 'Reinforce the weave to stabilize a faltering spell.',
-        },
-      ],
-    },
-    {
-      id: 'illusion',
-      label: 'Illusion',
-      spells: [
-        {
-          id: 'sw-3',
-          name: 'Mirror Shards',
-          roll: '1d6',
-          description: 'Split into shimmering afterimages that confound foes.',
-        },
-        {
-          id: 'sw-4',
-          name: 'Veiled Passage',
-          roll: '1d4',
-          description: 'Mask movement with a shifting mirage.',
-        },
-      ],
-    },
-  ],
-  Bloodbinder: [
-    {
-      id: 'blood',
-      label: 'Blood',
-      spells: [
-        {
-          id: 'bb-1',
-          name: 'Sanguine Lash',
-          roll: '1d6',
-          description: 'Draw out vitality and bind it into a crimson whip.',
-        },
-        {
-          id: 'bb-2',
-          name: 'Hemorrhage',
-          roll: '1d8',
-          description: 'Rend a foe with a curse that bleeds through armor.',
-        },
-      ],
-    },
-    {
-      id: 'necrotic',
-      label: 'Necrotic',
-      spells: [
-        {
-          id: 'bb-3',
-          name: 'Gravebind',
+          id: 'bar-3',
+          name: 'Groundsplit',
           roll: '1d10',
-          description: 'Anchor a target in place with grave-cold chains.',
+          description: 'Cleave the earth with a brutal strike.',
         },
       ],
     },
   ],
-  Storm: [
-    {
-      id: 'nature',
-      label: 'Nature',
-      spells: [
-        {
-          id: 'st-1',
-          name: 'Thorn Snare',
-          roll: '1d6',
-          description: 'Vines lash out to entangle a quarry.',
-        },
-        {
-          id: 'st-2',
-          name: 'Beast Call',
-          roll: '1d8',
-          description: 'Summon a fleeting spirit beast to harry enemies.',
-        },
-      ],
-    },
-    {
-      id: 'storm',
-      label: 'Storm',
-      spells: [
-        {
-          id: 'st-3',
-          name: 'Storm Arrow',
-          roll: '1d8',
-          description: 'Imbue a shot with crackling storm energy.',
-        },
-        {
-          id: 'st-4',
-          name: 'Windstep',
-          roll: '1d4',
-          description: 'Ride a gust to move with sudden speed.',
-        },
-      ],
-    },
-  ],
-  'Silver Tongue': [
+  Bard: [
     {
       id: 'inspiration',
       label: 'Inspiration',
       spells: [
         {
-          id: 'sl-1',
-          name: "Hero's Verse",
+          id: 'brd-1',
+          name: 'Harmonic Lift',
           roll: '1d6',
-          description: 'A stirring refrain that lifts hearts and steadies hands.',
+          description: 'A soaring verse that fortifies weary hearts.',
         },
         {
-          id: 'sl-2',
-          name: 'Soothing Hymn',
-          roll: '1d8',
-          description: 'A gentle chorus that mends bruises and calms fear.',
+          id: 'brd-2',
+          name: 'Encore',
+          roll: '1d4',
+          description: 'Repeat a triumph to rekindle momentum.',
         },
       ],
     },
@@ -523,118 +410,330 @@ const CLASS_SPELLBOOKS = {
       label: 'Charm',
       spells: [
         {
-          id: 'sl-3',
-          name: 'Glamour',
-          roll: '1d6',
-          description: 'Enthrall a listener with an alluring cadence.',
+          id: 'brd-3',
+          name: 'Charmed Phrase',
+          roll: '1d8',
+          description: 'A honeyed line that softens even hardened foes.',
+        },
+      ],
+    },
+  ],
+  Cleric: [
+    {
+      id: 'healing',
+      label: 'Healing',
+      spells: [
+        {
+          id: 'clr-1',
+          name: 'Radiant Mend',
+          roll: '1d8',
+          description: 'Restore life with a surge of holy light.',
         },
         {
-          id: 'sl-4',
-          name: 'Silvered Tongue',
+          id: 'clr-2',
+          name: 'Purify',
           roll: '1d4',
-          description: 'Weave honeyed words that blur truth and intent.',
-        },
-      ],
-    },
-  ],
-  Golem: [
-    {
-      id: 'earth',
-      label: 'Earth',
-      spells: [
-        {
-          id: 'go-1',
-          name: 'Stonebreak',
-          roll: '1d10',
-          description: 'Drive a seismic blow that rattles armor and bone.',
-        },
-        {
-          id: 'go-2',
-          name: 'Seismic Step',
-          roll: '1d6',
-          description: 'Stomp the ground to stagger nearby foes.',
-        },
-      ],
-    },
-    {
-      id: 'fortitude',
-      label: 'Fortitude',
-      spells: [
-        {
-          id: 'go-3',
-          name: 'Iron Skin',
-          roll: '1d8',
-          description: 'Harden the body with a granite sheen.',
-        },
-      ],
-    },
-  ],
-  Inquisitor: [
-    {
-      id: 'judgement',
-      label: 'Judgement',
-      spells: [
-        {
-          id: 'in-1',
-          name: 'Truthflare',
-          roll: '1d8',
-          description: 'Reveal deceit with a burst of searing light.',
-        },
-        {
-          id: 'in-2',
-          name: 'Brand of Justice',
-          roll: '1d6',
-          description: 'Mark a foe so their misdeeds burn on every strike.',
+          description: 'Cleanse poisons and ailments from the body.',
         },
       ],
     },
     {
       id: 'sacred',
-      label: 'Healing',
+      label: 'Sacred',
       spells: [
         {
-          id: 'in-3',
-          name: 'Sanctify',
-          roll: '1d4',
-          description: 'Cleanse corruption and restore a sliver of strength.',
+          id: 'clr-3',
+          name: 'Sanctuary',
+          roll: '1d6',
+          description: 'A protective ward that dulls incoming harm.',
         },
       ],
     },
   ],
-  Shade: [
+  Druid: [
     {
-      id: 'alchemy',
-      label: 'Alchemy',
+      id: 'nature',
+      label: 'Nature',
       spells: [
         {
-          id: 'sh-1',
-          name: 'Caustic Vial',
+          id: 'dru-1',
+          name: 'Briar Grasp',
           roll: '1d6',
-          description: 'Hurl a volatile concoction that eats through steel.',
+          description: 'Vines ensnare and slow an advancing foe.',
         },
         {
-          id: 'sh-2',
-          name: 'Stonewater Draft',
+          id: 'dru-2',
+          name: 'Wildgrowth',
           roll: '1d8',
-          description: 'Thicken the air into a choking mist.',
+          description: 'Summon a surge of flora to reshape the terrain.',
         },
       ],
     },
     {
-      id: 'transmutation',
-      label: 'Transmutation',
+      id: 'healing',
+      label: 'Healing',
       spells: [
         {
-          id: 'sh-3',
-          name: 'Fleshwarp',
+          id: 'dru-3',
+          name: 'Verdant Renewal',
           roll: '1d4',
-          description: 'Warp a limb briefly to slip through a tight space.',
+          description: 'Channel life energy to restore strength.',
+        },
+      ],
+    },
+  ],
+  Fighter: [
+    {
+      id: 'valor',
+      label: 'Valor',
+      spells: [
+        {
+          id: 'fig-1',
+          name: 'Battle Rhythm',
+          roll: '1d6',
+          description: 'Find the cadence of battle and strike true.',
         },
         {
-          id: 'sh-4',
-          name: 'Smoke Bloom',
+          id: 'fig-2',
+          name: 'Steel Focus',
+          roll: '1d4',
+          description: 'Narrow focus to shrug off distractions.',
+        },
+      ],
+    },
+    {
+      id: 'protection',
+      label: 'Protection',
+      spells: [
+        {
+          id: 'fig-3',
+          name: 'Guard Stance',
+          roll: '1d8',
+          description: 'Brace for impact and absorb a heavy blow.',
+        },
+      ],
+    },
+  ],
+  Monk: [
+    {
+      id: 'fortitude',
+      label: 'Fortitude',
+      spells: [
+        {
+          id: 'mnk-1',
+          name: 'Inner Stillness',
           roll: '1d6',
-          description: 'Bloom a smoke cloud that obscures sight lines.',
+          description: 'Center your breath to resist pain.',
+        },
+        {
+          id: 'mnk-2',
+          name: 'Iron Palm',
+          roll: '1d8',
+          description: 'Channel ki into a devastating focused strike.',
+        },
+      ],
+    },
+    {
+      id: 'utility',
+      label: 'Utility',
+      spells: [
+        {
+          id: 'mnk-3',
+          name: 'Windstep',
+          roll: '1d4',
+          description: 'Glide across the battlefield with light feet.',
+        },
+      ],
+    },
+  ],
+  Paladin: [
+    {
+      id: 'sacred',
+      label: 'Sacred',
+      spells: [
+        {
+          id: 'pal-1',
+          name: 'Oathfire',
+          roll: '1d8',
+          description: 'Imbue a strike with sacred fire.',
+        },
+        {
+          id: 'pal-2',
+          name: 'Blessed Ground',
+          roll: '1d6',
+          description: 'Consecrate the ground to guard allies.',
+        },
+      ],
+    },
+    {
+      id: 'protection',
+      label: 'Protection',
+      spells: [
+        {
+          id: 'pal-3',
+          name: 'Guardian Aura',
+          roll: '1d4',
+          description: 'A shimmering aura that lessens incoming harm.',
+        },
+      ],
+    },
+  ],
+  Ranger: [
+    {
+      id: 'nature',
+      label: 'Nature',
+      spells: [
+        {
+          id: 'rng-1',
+          name: 'Marked Trail',
+          roll: '1d6',
+          description: 'Reveal a hunter’s path through the wilderness.',
+        },
+        {
+          id: 'rng-2',
+          name: 'Feral Sense',
+          roll: '1d4',
+          description: 'Heighten senses to track hidden movement.',
+        },
+      ],
+    },
+    {
+      id: 'storm',
+      label: 'Storm',
+      spells: [
+        {
+          id: 'rng-3',
+          name: 'Tempest Shot',
+          roll: '1d8',
+          description: 'Loose a charged arrow wreathed in thunder.',
+        },
+      ],
+    },
+  ],
+  Rogue: [
+    {
+      id: 'shadow',
+      label: 'Shadow',
+      spells: [
+        {
+          id: 'rog-1',
+          name: 'Silent Drift',
+          roll: '1d6',
+          description: 'Slip through darkness without a sound.',
+        },
+        {
+          id: 'rog-2',
+          name: 'Blackout',
+          roll: '1d4',
+          description: 'Snuff a torch’s glow and move unseen.',
+        },
+      ],
+    },
+    {
+      id: 'trickery',
+      label: 'Trickery',
+      spells: [
+        {
+          id: 'rog-3',
+          name: 'Feign Step',
+          roll: '1d8',
+          description: 'Misdirect a foe with a sudden feint.',
+        },
+      ],
+    },
+  ],
+  Sorcerer: [
+    {
+      id: 'magic',
+      label: 'Magic',
+      spells: [
+        {
+          id: 'sor-1',
+          name: 'Wild Bolt',
+          roll: '1d8',
+          description: 'Release a surge of raw, untamed power.',
+        },
+        {
+          id: 'sor-2',
+          name: 'Flux Shield',
+          roll: '1d6',
+          description: 'A volatile ward that flares on impact.',
+        },
+      ],
+    },
+    {
+      id: 'storm',
+      label: 'Storm',
+      spells: [
+        {
+          id: 'sor-3',
+          name: 'Storm Lance',
+          roll: '1d10',
+          description: 'Pierce the air with a spear of lightning.',
+        },
+      ],
+    },
+  ],
+  Warlock: [
+    {
+      id: 'necrotic',
+      label: 'Necrotic',
+      spells: [
+        {
+          id: 'war-1',
+          name: 'Grave Leash',
+          roll: '1d8',
+          description: 'Bind a target with spectral chains.',
+        },
+        {
+          id: 'war-2',
+          name: 'Soul Rend',
+          roll: '1d10',
+          description: 'Tear at the spirit with forbidden power.',
+        },
+      ],
+    },
+    {
+      id: 'magic',
+      label: 'Magic',
+      spells: [
+        {
+          id: 'war-3',
+          name: 'Eldritch Bolt',
+          roll: '1d6',
+          description: 'A crack of pact energy that scorches the air.',
+        },
+      ],
+    },
+  ],
+  Wizard: [
+    {
+      id: 'arcane',
+      label: 'Arcane',
+      spells: [
+        {
+          id: 'wiz-1',
+          name: 'Runic Burst',
+          roll: '1d8',
+          description: 'Release stored runes in a focused detonation.',
+        },
+        {
+          id: 'wiz-2',
+          name: 'Aether Bind',
+          roll: '1d6',
+          description: 'Clamp an enemy with arcing sigils.',
+        },
+      ],
+    },
+    {
+      id: 'illusion',
+      label: 'Illusion',
+      spells: [
+        {
+          id: 'wiz-3',
+          name: 'Veil of Mirrors',
+          roll: '1d4',
+          description: 'Split your outline into phantom echoes.',
         },
       ],
     },
@@ -772,18 +871,22 @@ const REP_LABELS = {
 };
 
 const SAVE_PROFICIENCIES = {
-  Vanguard: ['Strength', 'Constitution'],
-  Whisper: ['Dexterity', 'Intelligence'],
-  Spellweaver: ['Intelligence', 'Wisdom'],
-  Bloodbinder: ['Constitution', 'Charisma'],
-  Storm: ['Strength', 'Dexterity'],
-  'Silver Tongue': ['Charisma', 'Dexterity'],
-  Golem: ['Strength', 'Constitution'],
-  Inquisitor: ['Wisdom', 'Charisma'],
-  Shade: ['Intelligence', 'Dexterity'],
+  Artificer: ['Constitution', 'Intelligence'],
+  Barbarian: ['Strength', 'Constitution'],
+  Bard: ['Dexterity', 'Charisma'],
+  Cleric: ['Wisdom', 'Charisma'],
+  Druid: ['Intelligence', 'Wisdom'],
+  Fighter: ['Strength', 'Constitution'],
+  Monk: ['Strength', 'Dexterity'],
+  Paladin: ['Wisdom', 'Charisma'],
+  Ranger: ['Strength', 'Dexterity'],
+  Rogue: ['Dexterity', 'Intelligence'],
+  Sorcerer: ['Constitution', 'Charisma'],
+  Warlock: ['Wisdom', 'Charisma'],
+  Wizard: ['Intelligence', 'Wisdom'],
 };
 
-const getProficiencyBonus = (level) => Math.floor((Math.max(1, level) - 1) / 4) + 2;
+const SAVE_PROFICIENCY_BONUS = 2;
 
 const SPELL_CATEGORY_ICONS = {
   Healing: (
@@ -1074,6 +1177,7 @@ export default function Campaign() {
   const [skillLevels, setSkillLevels] = useState({});
   const [skillProgress, setSkillProgress] = useState({});
   const [skillPoints, setSkillPoints] = useState(0);
+  const [saveRolls, setSaveRolls] = useState({});
   const [spellCategory, setSpellCategory] = useState('');
 
   useEffect(() => {
@@ -1106,6 +1210,7 @@ export default function Campaign() {
         setSkillLevels(data.skills ?? {});
         setSkillProgress(data.skill_progress ?? {});
         setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
+        setSaveRolls(data.saving_throws ?? {});
         setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
         setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
         setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
@@ -1148,8 +1253,6 @@ export default function Campaign() {
   const skillProgressByName = skillProgress;
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 20;
-  const playerLevel = Number.isFinite(campaign?.level) ? campaign.level : 1;
-  const proficiencyBonus = getProficiencyBonus(playerLevel);
   const npcList = useMemo(() => {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
@@ -1161,6 +1264,9 @@ export default function Campaign() {
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
   }, [campaign]);
   const saveProficiencies = useMemo(() => {
+    if (Array.isArray(campaign?.save_proficiencies) && campaign.save_proficiencies.length) {
+      return campaign.save_proficiencies;
+    }
     if (SAVE_PROFICIENCIES[classKey]) return SAVE_PROFICIENCIES[classKey];
     const sorted = [...ABILITIES].sort((a, b) => {
       const aScore = abilityScoresByName[a] ?? 10;
@@ -1168,7 +1274,7 @@ export default function Campaign() {
       return bScore - aScore;
     });
     return sorted.slice(0, 2);
-  }, [classKey, abilityScoresByName]);
+  }, [campaign, classKey, abilityScoresByName]);
   const spellbook = useMemo(() => {
     const stored = campaign?.spellbook ?? campaign?.spells;
     if (Array.isArray(stored)) return stored;
@@ -2952,7 +3058,7 @@ export default function Campaign() {
                         Saving Throws
                       </h4>
                       <span className="rounded-full border border-white/20 px-3 py-1 text-[0.7rem] font-semibold text-[var(--soft)]">
-                        Proficiency +{proficiencyBonus}
+                        Proficiency +{SAVE_PROFICIENCY_BONUS}
                       </span>
                     </div>
                     <p className="m-0 mt-2 text-xs text-[var(--soft)]">
@@ -2961,10 +3067,11 @@ export default function Campaign() {
                   </div>
                   <div className="grid gap-3">
                     {ABILITIES.map((ability) => {
-                      const score = abilityScoresByName[ability] ?? 10;
-                      const mod = getAbilityModifier(score);
+                      const roll = Number.isFinite(saveRolls?.[ability]) ? saveRolls[ability] : null;
+                      const mod = roll ? getSaveModifier(roll) : 0;
                       const proficient = saveProficiencies.includes(ability);
-                      const total = mod + (proficient ? proficiencyBonus : 0);
+                      const total =
+                        roll === null ? null : mod + (proficient ? SAVE_PROFICIENCY_BONUS : 0);
                       return (
                         <div
                           key={ability}
@@ -2973,7 +3080,9 @@ export default function Campaign() {
                           <div className="flex items-center justify-between gap-2">
                             <div>
                               <p className="m-0 text-sm font-semibold">{ability}</p>
-                              <p className="m-0 text-xs text-[var(--soft)]">d20 + {mod >= 0 ? `+${mod}` : mod}</p>
+                              <p className="m-0 text-xs text-[var(--soft)]">
+                                d20 + {mod >= 0 ? `+${mod}` : mod}
+                              </p>
                             </div>
                             <div className="flex items-center gap-2">
                               {proficient && (
@@ -2982,13 +3091,19 @@ export default function Campaign() {
                                 </span>
                               )}
                               <span className="text-base font-semibold text-[var(--ink)]">
-                                {total >= 0 ? `+${total}` : total}
+                                {total === null ? '--' : total >= 0 ? `+${total}` : total}
                               </span>
                             </div>
                           </div>
                           <div className="flex items-center justify-between text-xs text-[var(--soft)]">
-                            <span>Ability score {score}</span>
-                            <span>{proficient ? `Includes +${proficiencyBonus} proficiency` : 'Not proficient'}</span>
+                            <span>
+                              Roll {roll ?? '--'} · Save mod {mod >= 0 ? `+${mod}` : mod}
+                            </span>
+                            <span>
+                              {proficient
+                                ? `Includes +${SAVE_PROFICIENCY_BONUS} proficiency`
+                                : 'Not proficient'}
+                            </span>
                           </div>
                         </div>
                       );

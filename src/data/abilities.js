@@ -23,6 +23,12 @@ export const getAbilityModifier = (score) => {
   return Math.floor((value - 10) / 2);
 };
 
+export const getSaveModifier = (score) => {
+  const value = Number.isFinite(score) ? score : 10;
+  const modifier = Math.floor((value - 10) / 2);
+  return Math.min(5, Math.max(0, modifier));
+};
+
 export const getAbilityRequirement = (score) => {
   const value = Number.isFinite(score) ? score : 10;
   if (value >= 30) return null;
