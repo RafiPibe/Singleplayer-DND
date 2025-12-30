@@ -1,4 +1,3 @@
-# LEGACY VERSION
 Singleplayer DnD Campaign (WIP)
 
 (Built with React + Supabase)

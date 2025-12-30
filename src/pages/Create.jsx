@@ -117,7 +117,7 @@ export default function Create() {
     return `${nickname} (${role})`;
   };
 
-  const rollRepValue = () => rollInRange(-20, 20);
+  const rollRepValue = () => rollDie(6) - rollDie(6);
 
   const trackInterval = (id) => {
     timersRef.current.intervals.add(id);

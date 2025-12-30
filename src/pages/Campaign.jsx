@@ -1554,7 +1554,7 @@ export default function Campaign() {
                         })}
                       </div>
                     </div>
-                    <div className="mt-3 grid gap-4">
+                    <div className="mt-6 grid gap-4">
                       {Object.keys(reputationByName).length === 0 && (
                         <p className="m-0 text-xs text-[var(--soft)]">No reputation recorded.</p>
                       )}
