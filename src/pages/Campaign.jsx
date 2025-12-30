@@ -256,6 +256,16 @@ const sampleOssuary = [
     note: 'Sharpens the mind for the next challenge.',
   },
   {
+    id: 'oss-7',
+    name: 'Elixir of Mastery',
+    type: 'Consumable',
+    rarity: 'Rare',
+    effect: 'Experience',
+    potency: '6 XP',
+    playerXp: 6,
+    note: 'A potent draft that accelerates skill growth.',
+  },
+  {
     id: 'oss-4',
     name: 'Blood-etched Signet',
     type: 'Item',
@@ -887,6 +897,7 @@ const SAVE_PROFICIENCIES = {
 };
 
 const SAVE_PROFICIENCY_BONUS = 2;
+const getLevelRequirement = (level) => getAbilityRequirement(level);
 
 const SPELL_CATEGORY_ICONS = {
   Healing: (
@@ -1171,6 +1182,8 @@ export default function Campaign() {
   const [inventoryData, setInventoryData] = useState(() => normalizeInventory(sampleInventoryData));
   const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
   const [hpCurrent, setHpCurrent] = useState(0);
+  const [playerLevel, setPlayerLevel] = useState(1);
+  const [playerXp, setPlayerXp] = useState(0);
   const [activeBuffs, setActiveBuffs] = useState([]);
   const [abilityScores, setAbilityScores] = useState({});
   const [abilityProgress, setAbilityProgress] = useState({});
@@ -1196,15 +1209,17 @@ export default function Campaign() {
         .eq('id', id)
         .single();
 
-      if (fetchError) {
-        setError(fetchError.message);
-        setCampaign(null);
-      } else {
-        setCampaign(data);
-        const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
-        const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
-        setHpCurrent(currentHp);
-        setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
+        if (fetchError) {
+          setError(fetchError.message);
+          setCampaign(null);
+        } else {
+          setCampaign(data);
+          const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
+          const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
+          setHpCurrent(currentHp);
+          setPlayerLevel(Number.isFinite(data.level) ? data.level : 1);
+          setPlayerXp(Number.isFinite(data.level_xp) ? data.level_xp : 0);
+          setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
         setAbilityScores(data.ability_scores ?? data.stats ?? {});
         setAbilityProgress(data.ability_progress ?? {});
         setSkillLevels(data.skills ?? {});
@@ -1253,6 +1268,14 @@ export default function Campaign() {
   const skillProgressByName = skillProgress;
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 20;
+  const levelRequirement = getLevelRequirement(playerLevel);
+  const levelProgress = levelRequirement ? Math.min(playerXp, levelRequirement) : 0;
+  const levelPercent = levelRequirement
+    ? Math.min(100, (levelProgress / levelRequirement) * 100)
+    : 100;
+  const levelLabel = levelRequirement
+    ? `Lvl ${playerLevel} • ${levelProgress}/${levelRequirement}`
+    : `Lvl ${playerLevel} • MAX`;
   const npcList = useMemo(() => {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
@@ -1754,6 +1777,30 @@ export default function Campaign() {
     };
   };
 
+  const applyLevelProgress = (level, xp, amount) => {
+    const safeLevel = Math.max(1, Number.isFinite(level) ? level : 1);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return { level: safeLevel, xp: Math.max(0, xp ?? 0), gainedLevels: 0 };
+    }
+    let nextLevel = safeLevel;
+    let remaining = (xp ?? 0) + amount;
+    let required = getLevelRequirement(nextLevel);
+    let gainedLevels = 0;
+
+    while (required && remaining >= required && nextLevel < 30) {
+      remaining -= required;
+      nextLevel += 1;
+      gainedLevels += 1;
+      required = getLevelRequirement(nextLevel);
+    }
+
+    return {
+      level: nextLevel,
+      xp: nextLevel >= 30 || !required ? 0 : Math.max(0, remaining),
+      gainedLevels,
+    };
+  };
+
   const handleSpendSkillPoint = async (ability) => {
     if (skillPoints <= 0) return;
     const currentScore = abilityScoresByName[ability] ?? 10;
@@ -1808,12 +1855,15 @@ export default function Campaign() {
     const skillXp = Number.isFinite(item.skillXp)
       ? item.skillXp
       : Number.parseInt(item.potency, 10) || 0;
+    const playerXpGain = Number.isFinite(item.playerXp) ? item.playerXp : 0;
 
     let nextAbilityScores = abilityScoresByName;
     let nextAbilityProgress = abilityProgress;
     let nextSkillLevels = skillLevelsByName;
     let nextSkillProgress = skillProgressByName;
     let nextSkillPoints = skillPoints;
+    let nextPlayerLevel = playerLevel;
+    let nextPlayerXp = playerXp;
 
     if (abilityTarget && ABILITIES.includes(abilityTarget)) {
       if (Number.isFinite(abilityScoreBoost)) {
@@ -1859,6 +1909,15 @@ export default function Campaign() {
       }
     }
 
+    if (playerXpGain > 0) {
+      const updated = applyLevelProgress(playerLevel, playerXp, playerXpGain);
+      nextPlayerLevel = updated.level;
+      nextPlayerXp = updated.xp;
+      if (updated.gainedLevels) {
+        nextSkillPoints += updated.gainedLevels;
+      }
+    }
+
     setHpCurrent(nextHp);
     setInventoryData(nextInventory);
     setActiveBuffs(nextBuffs);
@@ -1867,6 +1926,8 @@ export default function Campaign() {
     setSkillLevels(nextSkillLevels);
     setSkillProgress(nextSkillProgress);
     setSkillPoints(nextSkillPoints);
+    setPlayerLevel(nextPlayerLevel);
+    setPlayerXp(nextPlayerXp);
     await savePatch({
       inventory: nextInventory,
       hp_current: nextHp,
@@ -1877,6 +1938,8 @@ export default function Campaign() {
       skills: nextSkillLevels,
       skill_progress: nextSkillProgress,
       skill_points: nextSkillPoints,
+      level: nextPlayerLevel,
+      level_xp: nextPlayerXp,
     });
   };
 
@@ -2222,12 +2285,15 @@ export default function Campaign() {
                       <span>Player Info</span>
                       <div className="grid justify-items-end gap-1">
                         <span className="text-red-300">HP {hpCurrent}/{hpMax}</span>
-                        <span className="text-sky-300/70">Lvl 1 • 0/15</span>
+                        <span className="text-sky-300/70">{levelLabel}</span>
                       </div>
                     </div>
                     <div className="mt-3">
                       <div className="mt-1 h-1.5 rounded-full bg-white/10">
-                        <div className="h-1.5 w-[0%] rounded-full bg-sky-300/40"></div>
+                        <div
+                          className="h-1.5 rounded-full bg-sky-300/40"
+                          style={{ width: `${levelPercent}%` }}
+                        ></div>
                       </div>
                     </div>
                     <div className="mt-3">
@@ -3125,8 +3191,16 @@ export default function Campaign() {
                 {campaign?.name ? `Now playing | ${campaign.name}` : 'Awaiting adventurer'}
               </p>
             </div>
-            <div className="rounded-full border border-[rgba(214,179,106,0.6)] px-3 py-1 text-[0.75rem] uppercase tracking-[0.12em]">
-              Live Session
+            <div className="flex items-center gap-3">
+              <div className="grid justify-items-end text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                <span className="text-red-300">
+                  HP {hpCurrent}/{hpMax}
+                </span>
+                <span className="text-sky-300/70">{levelLabel}</span>
+              </div>
+              <div className="rounded-full border border-[rgba(214,179,106,0.6)] px-3 py-1 text-[0.75rem] uppercase tracking-[0.12em]">
+                Live Session
+              </div>
             </div>
           </header>
 

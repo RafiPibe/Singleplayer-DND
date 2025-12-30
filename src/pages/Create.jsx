@@ -541,6 +541,8 @@ export default function Create() {
       skill_points: 0,
       saving_throws: saveRolls,
       save_proficiencies: saveProficiencies,
+      level: 1,
+      level_xp: 0,
       reputation: currentClassDetails.reputation,
       hp: currentClassDetails.hp,
       hp_current: currentClassDetails.hp,
