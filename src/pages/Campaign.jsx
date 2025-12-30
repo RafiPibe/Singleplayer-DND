@@ -771,6 +771,20 @@ const REP_LABELS = {
   },
 };
 
+const SAVE_PROFICIENCIES = {
+  Vanguard: ['Strength', 'Constitution'],
+  Whisper: ['Dexterity', 'Intelligence'],
+  Spellweaver: ['Intelligence', 'Wisdom'],
+  Bloodbinder: ['Constitution', 'Charisma'],
+  Storm: ['Strength', 'Dexterity'],
+  'Silver Tongue': ['Charisma', 'Dexterity'],
+  Golem: ['Strength', 'Constitution'],
+  Inquisitor: ['Wisdom', 'Charisma'],
+  Shade: ['Intelligence', 'Dexterity'],
+};
+
+const getProficiencyBonus = (level) => Math.floor((Math.max(1, level) - 1) / 4) + 2;
+
 const SPELL_CATEGORY_ICONS = {
   Healing: (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
@@ -1134,6 +1148,8 @@ export default function Campaign() {
   const skillProgressByName = skillProgress;
   const reputationByName = campaign?.reputation ?? {};
   const hpMax = campaign?.hp ?? 20;
+  const playerLevel = Number.isFinite(campaign?.level) ? campaign.level : 1;
+  const proficiencyBonus = getProficiencyBonus(playerLevel);
   const npcList = useMemo(() => {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
@@ -1144,6 +1160,15 @@ export default function Campaign() {
     const raw = campaign?.class_name ?? '';
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
   }, [campaign]);
+  const saveProficiencies = useMemo(() => {
+    if (SAVE_PROFICIENCIES[classKey]) return SAVE_PROFICIENCIES[classKey];
+    const sorted = [...ABILITIES].sort((a, b) => {
+      const aScore = abilityScoresByName[a] ?? 10;
+      const bScore = abilityScoresByName[b] ?? 10;
+      return bScore - aScore;
+    });
+    return sorted.slice(0, 2);
+  }, [classKey, abilityScoresByName]);
   const spellbook = useMemo(() => {
     const stored = campaign?.spellbook ?? campaign?.spells;
     if (Array.isArray(stored)) return stored;
@@ -1884,14 +1909,10 @@ export default function Campaign() {
     },
     {
       id: 8,
-      label: 'Boons',
+      label: 'Saves',
       icon: (
         <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
-          <path
-            d="M12 3l2.5 5 5.5.8-4 3.9.9 5.7-4.9-2.6-4.9 2.6.9-5.7-4-3.9 5.5-.8L12 3Z"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+          <path d="M12 3l7 4v6c0 4-3 6-7 8-4-2-7-4-7-8V7l7-4Z" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       ),
     },
@@ -1914,7 +1935,7 @@ export default function Campaign() {
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <main className="relative z-10 grid h-screen box-border gap-6 px-[5vw] py-6 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]">
+      <main className="relative z-10 grid h-screen box-border gap-6 px-[clamp(16px,3vw,40px)] py-6 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]">
         <aside className="flex max-h-[calc(100vh-140px)] flex-col gap-4">
           <div className="flex min-h-0 flex-1 flex-col rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-4 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
             <div className="grid gap-3">
@@ -2924,8 +2945,55 @@ export default function Campaign() {
               )}
 
               {leftTab === 8 && (
-                <div className="rounded-[14px] border border-white/10 bg-white/5 p-4 text-center text-sm text-[var(--soft)]">
-                  Coming soon.
+                <div className="grid gap-3">
+                  <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="m-0 text-xs font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
+                        Saving Throws
+                      </h4>
+                      <span className="rounded-full border border-white/20 px-3 py-1 text-[0.7rem] font-semibold text-[var(--soft)]">
+                        Proficiency +{proficiencyBonus}
+                      </span>
+                    </div>
+                    <p className="m-0 mt-2 text-xs text-[var(--soft)]">
+                      Roll d20 and add the listed modifier. Proficient saves include your proficiency bonus.
+                    </p>
+                  </div>
+                  <div className="grid gap-3">
+                    {ABILITIES.map((ability) => {
+                      const score = abilityScoresByName[ability] ?? 10;
+                      const mod = getAbilityModifier(score);
+                      const proficient = saveProficiencies.includes(ability);
+                      const total = mod + (proficient ? proficiencyBonus : 0);
+                      return (
+                        <div
+                          key={ability}
+                          className="grid gap-2 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              <p className="m-0 text-sm font-semibold">{ability}</p>
+                              <p className="m-0 text-xs text-[var(--soft)]">d20 + {mod >= 0 ? `+${mod}` : mod}</p>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              {proficient && (
+                                <span className="rounded-full border border-[rgba(214,179,106,0.6)] px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">
+                                  Proficient
+                                </span>
+                              )}
+                              <span className="text-base font-semibold text-[var(--ink)]">
+                                {total >= 0 ? `+${total}` : total}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between text-xs text-[var(--soft)]">
+                            <span>Ability score {score}</span>
+                            <span>{proficient ? `Includes +${proficiencyBonus} proficiency` : 'Not proficient'}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
             </div>
