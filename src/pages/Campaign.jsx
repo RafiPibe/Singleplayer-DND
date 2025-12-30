@@ -1855,7 +1855,11 @@ export default function Campaign() {
     const skillXp = Number.isFinite(item.skillXp)
       ? item.skillXp
       : Number.parseInt(item.potency, 10) || 0;
-    const playerXpGain = Number.isFinite(item.playerXp) ? item.playerXp : 0;
+    const playerXpGain = Number.isFinite(item.playerXp)
+      ? item.playerXp
+      : effect.toLowerCase().includes('experience')
+        ? Number.parseInt(item.potency, 10) || 0
+        : 0;
 
     let nextAbilityScores = abilityScoresByName;
     let nextAbilityProgress = abilityProgress;
@@ -1968,6 +1972,7 @@ export default function Campaign() {
         abilityXp: item.abilityXp,
         skill: item.skill,
         skillXp: item.skillXp,
+        playerXp: item.playerXp,
         note: item.note,
       };
       return {
