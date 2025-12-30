@@ -263,6 +263,384 @@ const sampleOssuary = [
   },
 ];
 
+const DEFAULT_SPELLBOOK = [
+  {
+    id: 'healing',
+    label: 'Healing',
+    spells: [
+      {
+        id: 'heal-1',
+        name: 'Mend Wounds',
+        roll: '1d8',
+        description: 'Restore vitality to a wounded ally and close superficial cuts.',
+      },
+      {
+        id: 'heal-2',
+        name: 'Soothing Light',
+        roll: '1d4',
+        description: 'Calm nerves and dull pain, granting a brief reprieve.',
+      },
+    ],
+  },
+  {
+    id: 'magic',
+    label: 'Magic',
+    spells: [
+      {
+        id: 'magic-1',
+        name: 'Arcane Spark',
+        roll: '1d6',
+        description: 'Loose a crackling bolt of arcane energy at a target within sight.',
+      },
+      {
+        id: 'magic-2',
+        name: 'Sigil Burst',
+        roll: '1d8',
+        description: 'Etch a sigil that erupts with force when triggered.',
+      },
+    ],
+  },
+  {
+    id: 'utility',
+    label: 'Utility',
+    spells: [
+      {
+        id: 'util-1',
+        name: 'Veil of Silence',
+        roll: '1d4',
+        description: 'Muffle sound around you for a short stretch of time.',
+      },
+    ],
+  },
+];
+
+const CLASS_SPELLBOOKS = {
+  Vanguard: [
+    {
+      id: 'protection',
+      label: 'Protection',
+      spells: [
+        {
+          id: 'van-1',
+          name: 'Shield Ward',
+          roll: '1d6',
+          description: 'Raise a warding barrier that absorbs the next strike.',
+        },
+        {
+          id: 'van-2',
+          name: 'Oath of Bulwark',
+          roll: '1d8',
+          description: 'Hold the line, granting allies steadier footing.',
+        },
+      ],
+    },
+    {
+      id: 'valor',
+      label: 'Valor',
+      spells: [
+        {
+          id: 'van-3',
+          name: 'Rallying Cry',
+          roll: '1d4',
+          description: 'A battle shout that steels resolve and sharpens focus.',
+        },
+        {
+          id: 'van-4',
+          name: 'Searing Brand',
+          roll: '1d8',
+          description: 'Mark a foe with a blazing sigil that flares on impact.',
+        },
+      ],
+    },
+  ],
+  Whisper: [
+    {
+      id: 'shadow',
+      label: 'Shadow',
+      spells: [
+        {
+          id: 'wh-1',
+          name: 'Smoke Step',
+          roll: '1d6',
+          description: 'Slip through a veil of smoke and reposition in silence.',
+        },
+        {
+          id: 'wh-2',
+          name: 'Night Slice',
+          roll: '1d4',
+          description: 'A shadow-laced strike that leaves no trace.',
+        },
+      ],
+    },
+    {
+      id: 'trickery',
+      label: 'Trickery',
+      spells: [
+        {
+          id: 'wh-3',
+          name: 'Lockwhisper',
+          roll: '1d20',
+          description: 'Coax a stubborn lock open with a whispered incantation.',
+        },
+        {
+          id: 'wh-4',
+          name: 'Feign',
+          roll: '1d6',
+          description: 'Cloak intent and misdirect a target with a false tell.',
+        },
+      ],
+    },
+  ],
+  Spellweaver: [
+    {
+      id: 'arcane',
+      label: 'Magic',
+      spells: [
+        {
+          id: 'sw-1',
+          name: 'Arcane Bolt',
+          roll: '1d8',
+          description: 'Launch a focused bolt of raw arcane energy.',
+        },
+        {
+          id: 'sw-2',
+          name: 'Reality Stitch',
+          roll: '1d6',
+          description: 'Reinforce the weave to stabilize a faltering spell.',
+        },
+      ],
+    },
+    {
+      id: 'illusion',
+      label: 'Illusion',
+      spells: [
+        {
+          id: 'sw-3',
+          name: 'Mirror Shards',
+          roll: '1d6',
+          description: 'Split into shimmering afterimages that confound foes.',
+        },
+        {
+          id: 'sw-4',
+          name: 'Veiled Passage',
+          roll: '1d4',
+          description: 'Mask movement with a shifting mirage.',
+        },
+      ],
+    },
+  ],
+  Bloodbinder: [
+    {
+      id: 'blood',
+      label: 'Blood',
+      spells: [
+        {
+          id: 'bb-1',
+          name: 'Sanguine Lash',
+          roll: '1d6',
+          description: 'Draw out vitality and bind it into a crimson whip.',
+        },
+        {
+          id: 'bb-2',
+          name: 'Hemorrhage',
+          roll: '1d8',
+          description: 'Rend a foe with a curse that bleeds through armor.',
+        },
+      ],
+    },
+    {
+      id: 'necrotic',
+      label: 'Necrotic',
+      spells: [
+        {
+          id: 'bb-3',
+          name: 'Gravebind',
+          roll: '1d10',
+          description: 'Anchor a target in place with grave-cold chains.',
+        },
+      ],
+    },
+  ],
+  Storm: [
+    {
+      id: 'nature',
+      label: 'Nature',
+      spells: [
+        {
+          id: 'st-1',
+          name: 'Thorn Snare',
+          roll: '1d6',
+          description: 'Vines lash out to entangle a quarry.',
+        },
+        {
+          id: 'st-2',
+          name: 'Beast Call',
+          roll: '1d8',
+          description: 'Summon a fleeting spirit beast to harry enemies.',
+        },
+      ],
+    },
+    {
+      id: 'storm',
+      label: 'Storm',
+      spells: [
+        {
+          id: 'st-3',
+          name: 'Storm Arrow',
+          roll: '1d8',
+          description: 'Imbue a shot with crackling storm energy.',
+        },
+        {
+          id: 'st-4',
+          name: 'Windstep',
+          roll: '1d4',
+          description: 'Ride a gust to move with sudden speed.',
+        },
+      ],
+    },
+  ],
+  'Silver Tongue': [
+    {
+      id: 'inspiration',
+      label: 'Inspiration',
+      spells: [
+        {
+          id: 'sl-1',
+          name: "Hero's Verse",
+          roll: '1d6',
+          description: 'A stirring refrain that lifts hearts and steadies hands.',
+        },
+        {
+          id: 'sl-2',
+          name: 'Soothing Hymn',
+          roll: '1d8',
+          description: 'A gentle chorus that mends bruises and calms fear.',
+        },
+      ],
+    },
+    {
+      id: 'charm',
+      label: 'Charm',
+      spells: [
+        {
+          id: 'sl-3',
+          name: 'Glamour',
+          roll: '1d6',
+          description: 'Enthrall a listener with an alluring cadence.',
+        },
+        {
+          id: 'sl-4',
+          name: 'Silvered Tongue',
+          roll: '1d4',
+          description: 'Weave honeyed words that blur truth and intent.',
+        },
+      ],
+    },
+  ],
+  Golem: [
+    {
+      id: 'earth',
+      label: 'Earth',
+      spells: [
+        {
+          id: 'go-1',
+          name: 'Stonebreak',
+          roll: '1d10',
+          description: 'Drive a seismic blow that rattles armor and bone.',
+        },
+        {
+          id: 'go-2',
+          name: 'Seismic Step',
+          roll: '1d6',
+          description: 'Stomp the ground to stagger nearby foes.',
+        },
+      ],
+    },
+    {
+      id: 'fortitude',
+      label: 'Fortitude',
+      spells: [
+        {
+          id: 'go-3',
+          name: 'Iron Skin',
+          roll: '1d8',
+          description: 'Harden the body with a granite sheen.',
+        },
+      ],
+    },
+  ],
+  Inquisitor: [
+    {
+      id: 'judgement',
+      label: 'Judgement',
+      spells: [
+        {
+          id: 'in-1',
+          name: 'Truthflare',
+          roll: '1d8',
+          description: 'Reveal deceit with a burst of searing light.',
+        },
+        {
+          id: 'in-2',
+          name: 'Brand of Justice',
+          roll: '1d6',
+          description: 'Mark a foe so their misdeeds burn on every strike.',
+        },
+      ],
+    },
+    {
+      id: 'sacred',
+      label: 'Healing',
+      spells: [
+        {
+          id: 'in-3',
+          name: 'Sanctify',
+          roll: '1d4',
+          description: 'Cleanse corruption and restore a sliver of strength.',
+        },
+      ],
+    },
+  ],
+  Shade: [
+    {
+      id: 'alchemy',
+      label: 'Alchemy',
+      spells: [
+        {
+          id: 'sh-1',
+          name: 'Caustic Vial',
+          roll: '1d6',
+          description: 'Hurl a volatile concoction that eats through steel.',
+        },
+        {
+          id: 'sh-2',
+          name: 'Stonewater Draft',
+          roll: '1d8',
+          description: 'Thicken the air into a choking mist.',
+        },
+      ],
+    },
+    {
+      id: 'transmutation',
+      label: 'Transmutation',
+      spells: [
+        {
+          id: 'sh-3',
+          name: 'Fleshwarp',
+          roll: '1d4',
+          description: 'Warp a limb briefly to slip through a tight space.',
+        },
+        {
+          id: 'sh-4',
+          name: 'Smoke Bloom',
+          roll: '1d6',
+          description: 'Bloom a smoke cloud that obscures sight lines.',
+        },
+      ],
+    },
+  ],
+};
+
 const REP_ORDER = ['Honor', 'Mercy', 'Bravery', 'Loyalty', 'Justice', 'Generosity'];
 
 const REP_ICONS = {
@@ -393,6 +771,270 @@ const REP_LABELS = {
   },
 };
 
+const SPELL_CATEGORY_ICONS = {
+  Healing: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 20s-7-4.4-7-9.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 7 4.5C19 15.6 12 20 12 20Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Magic: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3v6m0 6v6M5 12h6m6 0h6M7 7l4 4m2 2 4 4M17 7l-4 4m-2 2-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Utility: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Z" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="12" cy="12" r="2.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Shadow: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M20 14.5A7.5 7.5 0 1 1 9.5 4a6 6 0 0 0 10.5 10.5Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Trickery: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M4 15c2 2 5 3 8 3s6-1 8-3M5 9c2 1 4 1 6 0m2 0c2 1 4 1 6 0" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M7 9a2 2 0 1 1 2-2M15 9a2 2 0 1 1 2-2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Arcane: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 2l3 7 7 3-7 3-3 7-3-7-7-3 7-3 3-7Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Illusion: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6Z" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9 12a3 3 0 0 0 6 0 3 3 0 0 0-6 0Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Blood: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3s6 6 6 10a6 6 0 0 1-12 0c0-4 6-10 6-10Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Necrotic: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <circle cx="12" cy="12" r="6" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M9.5 12h5M10 9h.01M14 9h.01M10 15h4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Nature: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M5 21c7 0 14-6 14-14-6 0-14 3-14 14Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Storm: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M13 2 3 14h7l-1 8 10-12h-7l1-8Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Inspiration: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M9 18V6l10-2v12" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="7" cy="18" r="2" />
+      <circle cx="17" cy="16" r="2" />
+    </svg>
+  ),
+  Charm: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 20s-7-4.4-7-9.5A4.5 4.5 0 0 1 12 6a4.5 4.5 0 0 1 7 4.5C19 15.6 12 20 12 20Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Earth: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M3 20h18L14 4 3 20Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Fortitude: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3l7 4v6c0 4-3 6-7 8-4-2-7-4-7-8V7l7-4Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Judgement: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 4v16M6 7h12M7 7l-3 5h6l-3-5Zm10 0l-3 5h6l-3-5Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Alchemy: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M10 2h4M10 2v5l-5 9a4 4 0 0 0 3.5 6h7a4 4 0 0 0 3.5-6l-5-9V2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Transmutation: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3v4m0 10v4M4 12h4m8 0h4M7 7l3 3m4 4 3 3M17 7l-3 3m-4 4-3 3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Protection: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3l7 4v6c0 4-3 6-7 8-4-2-7-4-7-8V7l7-4Z" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Valor: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 2v20M8 6h8M9 6l-4 4 4 4m6-8 4 4-4 4" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+  Sacred: (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+      <path d="M12 3v18M6 9h12" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  ),
+};
+
+const SPELL_CATEGORY_STYLES = {
+  Healing: {
+    text: 'text-emerald-300',
+    border: 'border-l-emerald-400/70',
+    pill: 'border-emerald-400/40 text-emerald-200',
+    badge: 'border-emerald-400/60 text-emerald-200 bg-emerald-400/10',
+    icon: 'border-emerald-400/70 text-emerald-200 shadow-[0_0_16px_rgba(52,211,153,0.25)]',
+  },
+  Magic: {
+    text: 'text-amber-300',
+    border: 'border-l-amber-400/70',
+    pill: 'border-amber-400/40 text-amber-200',
+    badge: 'border-amber-400/60 text-amber-200 bg-amber-400/10',
+    icon: 'border-amber-400/70 text-amber-200 shadow-[0_0_16px_rgba(251,191,36,0.25)]',
+  },
+  Utility: {
+    text: 'text-sky-300',
+    border: 'border-l-sky-400/70',
+    pill: 'border-sky-400/40 text-sky-200',
+    badge: 'border-sky-400/60 text-sky-200 bg-sky-400/10',
+    icon: 'border-sky-400/70 text-sky-200 shadow-[0_0_16px_rgba(56,189,248,0.25)]',
+  },
+  Shadow: {
+    text: 'text-violet-300',
+    border: 'border-l-violet-400/70',
+    pill: 'border-violet-400/40 text-violet-200',
+    badge: 'border-violet-400/60 text-violet-200 bg-violet-400/10',
+    icon: 'border-violet-400/70 text-violet-200 shadow-[0_0_16px_rgba(167,139,250,0.25)]',
+  },
+  Trickery: {
+    text: 'text-rose-300',
+    border: 'border-l-rose-400/70',
+    pill: 'border-rose-400/40 text-rose-200',
+    badge: 'border-rose-400/60 text-rose-200 bg-rose-400/10',
+    icon: 'border-rose-400/70 text-rose-200 shadow-[0_0_16px_rgba(251,113,133,0.25)]',
+  },
+  Arcane: {
+    text: 'text-indigo-300',
+    border: 'border-l-indigo-400/70',
+    pill: 'border-indigo-400/40 text-indigo-200',
+    badge: 'border-indigo-400/60 text-indigo-200 bg-indigo-400/10',
+    icon: 'border-indigo-400/70 text-indigo-200 shadow-[0_0_16px_rgba(129,140,248,0.25)]',
+  },
+  Illusion: {
+    text: 'text-fuchsia-300',
+    border: 'border-l-fuchsia-400/70',
+    pill: 'border-fuchsia-400/40 text-fuchsia-200',
+    badge: 'border-fuchsia-400/60 text-fuchsia-200 bg-fuchsia-400/10',
+    icon: 'border-fuchsia-400/70 text-fuchsia-200 shadow-[0_0_16px_rgba(232,121,249,0.25)]',
+  },
+  Blood: {
+    text: 'text-red-300',
+    border: 'border-l-red-400/70',
+    pill: 'border-red-400/40 text-red-200',
+    badge: 'border-red-400/60 text-red-200 bg-red-400/10',
+    icon: 'border-red-400/70 text-red-200 shadow-[0_0_16px_rgba(248,113,113,0.25)]',
+  },
+  Necrotic: {
+    text: 'text-purple-300',
+    border: 'border-l-purple-400/70',
+    pill: 'border-purple-400/40 text-purple-200',
+    badge: 'border-purple-400/60 text-purple-200 bg-purple-400/10',
+    icon: 'border-purple-400/70 text-purple-200 shadow-[0_0_16px_rgba(192,132,252,0.25)]',
+  },
+  Nature: {
+    text: 'text-green-300',
+    border: 'border-l-green-400/70',
+    pill: 'border-green-400/40 text-green-200',
+    badge: 'border-green-400/60 text-green-200 bg-green-400/10',
+    icon: 'border-green-400/70 text-green-200 shadow-[0_0_16px_rgba(74,222,128,0.25)]',
+  },
+  Storm: {
+    text: 'text-cyan-300',
+    border: 'border-l-cyan-400/70',
+    pill: 'border-cyan-400/40 text-cyan-200',
+    badge: 'border-cyan-400/60 text-cyan-200 bg-cyan-400/10',
+    icon: 'border-cyan-400/70 text-cyan-200 shadow-[0_0_16px_rgba(34,211,238,0.25)]',
+  },
+  Inspiration: {
+    text: 'text-yellow-300',
+    border: 'border-l-yellow-400/70',
+    pill: 'border-yellow-400/40 text-yellow-200',
+    badge: 'border-yellow-400/60 text-yellow-200 bg-yellow-400/10',
+    icon: 'border-yellow-400/70 text-yellow-200 shadow-[0_0_16px_rgba(250,204,21,0.25)]',
+  },
+  Charm: {
+    text: 'text-pink-300',
+    border: 'border-l-pink-400/70',
+    pill: 'border-pink-400/40 text-pink-200',
+    badge: 'border-pink-400/60 text-pink-200 bg-pink-400/10',
+    icon: 'border-pink-400/70 text-pink-200 shadow-[0_0_16px_rgba(244,114,182,0.25)]',
+  },
+  Earth: {
+    text: 'text-orange-300',
+    border: 'border-l-orange-400/70',
+    pill: 'border-orange-400/40 text-orange-200',
+    badge: 'border-orange-400/60 text-orange-200 bg-orange-400/10',
+    icon: 'border-orange-400/70 text-orange-200 shadow-[0_0_16px_rgba(251,146,60,0.25)]',
+  },
+  Fortitude: {
+    text: 'text-lime-300',
+    border: 'border-l-lime-400/70',
+    pill: 'border-lime-400/40 text-lime-200',
+    badge: 'border-lime-400/60 text-lime-200 bg-lime-400/10',
+    icon: 'border-lime-400/70 text-lime-200 shadow-[0_0_16px_rgba(163,230,53,0.25)]',
+  },
+  Judgement: {
+    text: 'text-amber-200',
+    border: 'border-l-amber-300/70',
+    pill: 'border-amber-300/40 text-amber-200',
+    badge: 'border-amber-300/60 text-amber-200 bg-amber-300/10',
+    icon: 'border-amber-300/70 text-amber-200 shadow-[0_0_16px_rgba(252,211,77,0.25)]',
+  },
+  Alchemy: {
+    text: 'text-teal-300',
+    border: 'border-l-teal-400/70',
+    pill: 'border-teal-400/40 text-teal-200',
+    badge: 'border-teal-400/60 text-teal-200 bg-teal-400/10',
+    icon: 'border-teal-400/70 text-teal-200 shadow-[0_0_16px_rgba(45,212,191,0.25)]',
+  },
+  Transmutation: {
+    text: 'text-blue-300',
+    border: 'border-l-blue-400/70',
+    pill: 'border-blue-400/40 text-blue-200',
+    badge: 'border-blue-400/60 text-blue-200 bg-blue-400/10',
+    icon: 'border-blue-400/70 text-blue-200 shadow-[0_0_16px_rgba(96,165,250,0.25)]',
+  },
+  Protection: {
+    text: 'text-slate-200',
+    border: 'border-l-slate-300/70',
+    pill: 'border-slate-300/40 text-slate-200',
+    badge: 'border-slate-300/60 text-slate-100 bg-slate-300/10',
+    icon: 'border-slate-300/70 text-slate-200 shadow-[0_0_16px_rgba(203,213,225,0.25)]',
+  },
+  Valor: {
+    text: 'text-amber-400',
+    border: 'border-l-amber-500/70',
+    pill: 'border-amber-500/40 text-amber-300',
+    badge: 'border-amber-500/60 text-amber-300 bg-amber-500/10',
+    icon: 'border-amber-500/70 text-amber-300 shadow-[0_0_16px_rgba(245,158,11,0.25)]',
+  },
+  Sacred: {
+    text: 'text-emerald-200',
+    border: 'border-l-emerald-300/70',
+    pill: 'border-emerald-300/40 text-emerald-200',
+    badge: 'border-emerald-300/60 text-emerald-200 bg-emerald-300/10',
+    icon: 'border-emerald-300/70 text-emerald-200 shadow-[0_0_16px_rgba(110,231,183,0.25)]',
+  },
+};
+
 export default function Campaign() {
   const { id } = useParams();
   const [campaign, setCampaign] = useState(null);
@@ -418,6 +1060,7 @@ export default function Campaign() {
   const [skillLevels, setSkillLevels] = useState({});
   const [skillProgress, setSkillProgress] = useState({});
   const [skillPoints, setSkillPoints] = useState(0);
+  const [spellCategory, setSpellCategory] = useState('');
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -497,6 +1140,25 @@ export default function Campaign() {
     }
     return sampleNpcs;
   }, [campaign]);
+  const classKey = useMemo(() => {
+    const raw = campaign?.class_name ?? '';
+    return raw.replace(/\s*\(.+\)\s*$/, '').trim();
+  }, [campaign]);
+  const spellbook = useMemo(() => {
+    const stored = campaign?.spellbook ?? campaign?.spells;
+    if (Array.isArray(stored)) return stored;
+    return CLASS_SPELLBOOKS[classKey] ?? DEFAULT_SPELLBOOK;
+  }, [campaign, classKey]);
+
+  useEffect(() => {
+    if (!spellbook.length) {
+      setSpellCategory('');
+      return;
+    }
+    if (!spellbook.some((category) => category.id === spellCategory)) {
+      setSpellCategory(spellbook[0].id);
+    }
+  }, [spellbook, spellCategory]);
 
   const getAbilityProgress = (ability) => {
     const score = Math.max(1, Math.min(30, abilityScoresByName[ability] ?? 10));
@@ -1253,41 +1915,43 @@ export default function Campaign() {
       <div className="glow" aria-hidden="true"></div>
 
       <main className="relative z-10 grid h-screen box-border gap-6 px-[5vw] py-6 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]">
-        <aside className="grid max-h-[calc(100vh-140px)] gap-4 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-4 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <h2 className="text-[clamp(1.2rem,1.8vw,1.8rem)]">{campaign?.name ?? 'Campaign'}</h2>
-                <p className="m-0 text-xs text-[var(--soft)]">{campaign?.class_name ?? 'Loading...'}</p>
+        <aside className="flex max-h-[calc(100vh-140px)] flex-col gap-4">
+          <div className="flex min-h-0 flex-1 flex-col rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-4 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+            <div className="grid gap-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-[clamp(1.2rem,1.8vw,1.8rem)]">{campaign?.name ?? 'Campaign'}</h2>
+                  <p className="m-0 text-xs text-[var(--soft)]">{campaign?.class_name ?? 'Loading...'}</p>
+                </div>
+                <Link
+                  className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+                  to="/"
+                >
+                  Back
+                </Link>
               </div>
-              <Link
-                className="rounded-full border border-white/20 bg-transparent px-3 py-1.5 text-xs font-semibold text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
-                to="/"
-              >
-                Back
-              </Link>
+              <div className="grid grid-cols-4 gap-2">
+                {leftMenu.map((item) => {
+                  const isActive = leftTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setLeftTab(item.id)}
+                      className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[0.55rem] uppercase tracking-[0.2em] transition ${
+                        isActive
+                          ? 'border-[rgba(214,179,106,0.6)] bg-[rgba(214,179,106,0.12)] text-[var(--accent)] shadow-[0_0_0_1px_rgba(214,179,106,0.35)]'
+                          : 'border-white/10 text-[var(--soft)] hover:border-white/30'
+                      }`}
+                    >
+                      <span className="text-[0.9rem]">{item.icon}</span>
+                      <span className="leading-tight">{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div className="grid grid-cols-4 gap-2">
-              {leftMenu.map((item) => {
-                const isActive = leftTab === item.id;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => setLeftTab(item.id)}
-                    className={`flex min-h-[56px] flex-col items-center justify-center gap-1 rounded-xl border px-2 py-2 text-[0.55rem] uppercase tracking-[0.2em] transition ${
-                      isActive
-                        ? 'border-[rgba(214,179,106,0.6)] bg-[rgba(214,179,106,0.12)] text-[var(--accent)] shadow-[0_0_0_1px_rgba(214,179,106,0.35)]'
-                        : 'border-white/10 text-[var(--soft)] hover:border-white/30'
-                    }`}
-                  >
-                    <span className="text-[0.9rem]">{item.icon}</span>
-                    <span className="leading-tight">{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-            <div className="mt-4">
+            <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {leftTab === 1 && (
                 <div className="grid gap-3">
                   <div className="flex flex-wrap gap-2">
@@ -2154,7 +2818,112 @@ export default function Campaign() {
                 </div>
               )}
 
-              {leftTab >= 7 && (
+              {leftTab === 7 && (
+                <div className="grid gap-3">
+                  <div className="rounded-full border border-[rgba(214,179,106,0.6)] bg-[rgba(14,11,3,0.45)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.25em] text-[var(--accent)]">
+                    Spellbook
+                  </div>
+                  {spellbook.length === 0 ? (
+                    <p className="m-0 text-sm text-[var(--soft)]">No spells recorded yet.</p>
+                  ) : (
+                    <div className="grid items-start gap-4 min-[460px]:grid-cols-[auto_1fr]">
+                      <div className="grid content-start gap-2">
+                        {spellbook.map((category) => {
+                          const isActive = spellCategory === category.id;
+                          const icon = SPELL_CATEGORY_ICONS[category.label] ?? SPELL_CATEGORY_ICONS.Magic;
+                          const style = SPELL_CATEGORY_STYLES[category.label] ?? SPELL_CATEGORY_STYLES.Magic;
+                          return (
+                            <button
+                              key={category.id ?? category.label}
+                              type="button"
+                              onClick={() => setSpellCategory(category.id)}
+                              className={`grid h-11 w-11 place-items-center rounded-full border transition ${
+                                isActive
+                                  ? style.icon
+                                  : 'border-white/15 text-[var(--soft)] hover:border-white/40'
+                              }`}
+                            >
+                              {icon}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="grid content-start gap-3">
+                        <div
+                          className={`text-xs uppercase tracking-[0.2em] ${
+                            SPELL_CATEGORY_STYLES[
+                              spellbook.find((category) => category.id === spellCategory)?.label ?? 'Magic'
+                            ]?.text ?? 'text-[var(--soft)]'
+                          }`}
+                        >
+                          {spellbook.find((category) => category.id === spellCategory)?.label ?? 'Spells'}
+                        </div>
+                        {(spellbook.find((category) => category.id === spellCategory)?.spells ?? []).map(
+                          (spell) => {
+                            const categoryLabel =
+                              spellbook.find((category) => category.id === spellCategory)?.label ??
+                              'Spell';
+                            const rank = Number.isFinite(spell.rank) ? spell.rank : 0;
+                            const tags = [categoryLabel].filter((tag) => tag);
+                            const style = SPELL_CATEGORY_STYLES[categoryLabel] ?? SPELL_CATEGORY_STYLES.Magic;
+
+                            return (
+                              <details
+                                key={spell.id ?? spell.name}
+                                className={`group rounded-[16px] border border-white/10 border-l-4 ${style.border} bg-[linear-gradient(145deg,rgba(17,21,30,0.85),rgba(10,12,18,0.95))] px-4 py-3 shadow-[0_18px_40px_rgba(2,6,18,0.5)]`}
+                              >
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="grid gap-1">
+                                      <span className="text-base font-semibold">{spell.name}</span>
+                                      <span className={`text-xs uppercase tracking-[0.2em] ${style.text}`}>
+                                        {categoryLabel} • {spell.roll}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span
+                                        className={`grid h-7 w-7 place-items-center rounded-full border text-xs font-semibold ${style.badge}`}
+                                      >
+                                        {rank}
+                                      </span>
+                                      <span className={`${style.text} transition group-open:rotate-180`}>
+                                        <svg
+                                          viewBox="0 0 24 24"
+                                          className="h-4 w-4"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="1.6"
+                                        >
+                                          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                      </span>
+                                    </div>
+                                  </div>
+                                </summary>
+                                <div className="mt-3 grid gap-2 border-t border-white/10 pt-3 text-sm text-[var(--soft)]">
+                                  <div className="flex flex-wrap gap-2">
+                                    {tags.map((tag) => (
+                                      <span
+                                        key={`${spell.name}-${tag}`}
+                                        className={`rounded-full border px-2.5 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.14em] ${style.pill}`}
+                                      >
+                                        {tag}
+                                      </span>
+                                    ))}
+                                  </div>
+                                  <p className="m-0 text-sm text-[var(--soft)]">{spell.description}</p>
+                                </div>
+                              </details>
+                            );
+                          }
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {leftTab === 8 && (
                 <div className="rounded-[14px] border border-white/10 bg-white/5 p-4 text-center text-sm text-[var(--soft)]">
                   Coming soon.
                 </div>
