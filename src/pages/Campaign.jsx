@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
+import ReactQuill from 'react-quill';
+import 'react-quill/dist/quill.snow.css';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
 import {
@@ -171,11 +173,63 @@ const normalizeInventory = (inventory) => {
   };
 };
 
+const stripHtml = (value) => {
+  if (!value) return '';
+  return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const normalizeJournalEntries = (entries) => {
+  if (!Array.isArray(entries)) return [];
+  const stamp = Date.now();
+  return entries.map((entry, index) => {
+    const content = entry?.content ?? entry?.text ?? '';
+    const title = entry?.title ?? entry?.date ?? 'Untitled Note';
+    const rawCategory = entry?.category ?? '';
+    const matchedCategory =
+      JOURNAL_CATEGORIES.find(
+        (category) => category !== 'All' && category.toLowerCase() === String(rawCategory).toLowerCase()
+      ) ?? 'Personal';
+    const createdAt = entry?.createdAt ?? entry?.date ?? new Date().toISOString();
+    return {
+      id: entry?.id ?? `jrnl-${stamp}-${index}`,
+      title,
+      category: matchedCategory,
+      content,
+      createdAt,
+    };
+  });
+};
+
+const JOURNAL_CATEGORIES = ['All', 'NPC', 'Location', 'Quest', 'Personal'];
+
+const JOURNAL_CATEGORY_STYLES = {
+  NPC: 'border-pink-500/40 text-pink-200 bg-pink-500/10',
+  Location: 'border-sky-400/40 text-sky-200 bg-sky-400/10',
+  Quest: 'border-amber-400/40 text-amber-200 bg-amber-400/10',
+  Personal: 'border-purple-400/40 text-purple-200 bg-purple-400/10',
+};
+
+const JOURNAL_MODULES = {
+  toolbar: {
+    container: '#journal-toolbar',
+  },
+};
+
+const JOURNAL_FORMATS = ['bold', 'italic', 'underline', 'strike', 'list', 'bullet', 'align'];
+
+const EMPTY_JOURNAL_ENTRY = {
+  title: '',
+  category: 'Personal',
+  content: '',
+};
+
 const sampleJournalEntries = [
   {
     id: 'jrnl-1',
-    date: new Date().toLocaleDateString(),
-    text: 'The courier left a letter with a river crest. Something about a creator in the docks.',
+    title: 'River Crest Letter',
+    category: 'Quest',
+    content: 'The courier left a letter with a river crest. Something about a creator in the docks.',
+    createdAt: new Date().toISOString(),
   },
 ];
 
@@ -1177,7 +1231,14 @@ export default function Campaign() {
   const [logTab, setLogTab] = useState('quests');
   const [inventoryTab, setInventoryTab] = useState('inventory');
   const [rumors, setRumors] = useState(sampleRumors);
-  const [journalEntries, setJournalEntries] = useState(sampleJournalEntries);
+  const [journalEntries, setJournalEntries] = useState(() =>
+    normalizeJournalEntries(sampleJournalEntries)
+  );
+  const [journalQuery, setJournalQuery] = useState('');
+  const [journalFilter, setJournalFilter] = useState('All');
+  const [journalMode, setJournalMode] = useState('list');
+  const [journalDraft, setJournalDraft] = useState(EMPTY_JOURNAL_ENTRY);
+  const [journalEditingId, setJournalEditingId] = useState(null);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
   const [inventoryData, setInventoryData] = useState(() => normalizeInventory(sampleInventoryData));
   const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
@@ -1235,9 +1296,9 @@ export default function Campaign() {
           setRumors(sampleRumors);
         }
         if (Array.isArray(data.journal) && data.journal.length) {
-          setJournalEntries(data.journal);
+          setJournalEntries(normalizeJournalEntries(data.journal));
         } else {
-          setJournalEntries(sampleJournalEntries);
+          setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
         }
         if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
           setInventoryData(normalizeInventory(data.inventory));
@@ -1313,6 +1374,22 @@ export default function Campaign() {
       setSpellCategory(spellbook[0].id);
     }
   }, [spellbook, spellCategory]);
+
+  const filteredJournalEntries = useMemo(() => {
+    const normalizedQuery = journalQuery.trim().toLowerCase();
+    const activeCategory = journalFilter === 'All' ? '' : journalFilter;
+    const filtered = journalEntries.filter((entry) => {
+      if (activeCategory && entry.category !== activeCategory) return false;
+      if (!normalizedQuery) return true;
+      const haystack = `${entry.title} ${stripHtml(entry.content)} ${entry.category}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+    return filtered.sort((a, b) => {
+      const aTime = new Date(a.createdAt ?? 0).getTime();
+      const bTime = new Date(b.createdAt ?? 0).getTime();
+      return bTime - aTime;
+    });
+  }, [journalEntries, journalQuery, journalFilter]);
 
   const getAbilityProgress = (ability) => {
     const score = Math.max(1, Math.min(30, abilityScoresByName[ability] ?? 10));
@@ -1487,6 +1564,59 @@ export default function Campaign() {
     setMessages(next);
     setMessageInput('');
     await savePatch({ messages: next });
+  };
+
+  const handleStartJournalEntry = () => {
+    setJournalDraft(EMPTY_JOURNAL_ENTRY);
+    setJournalEditingId(null);
+    setJournalMode('edit');
+  };
+
+  const handleEditJournalEntry = (entry) => {
+    setJournalDraft({
+      title: entry.title ?? '',
+      category: entry.category ?? 'Personal',
+      content: entry.content ?? '',
+    });
+    setJournalEditingId(entry.id);
+    setJournalMode('edit');
+  };
+
+  const handleCancelJournalEntry = () => {
+    setJournalDraft(EMPTY_JOURNAL_ENTRY);
+    setJournalEditingId(null);
+    setJournalMode('list');
+  };
+
+  const handleSaveJournalEntry = async () => {
+    const trimmedTitle = journalDraft.title.trim();
+    const plainText = stripHtml(journalDraft.content);
+    if (!trimmedTitle && !plainText) {
+      handleCancelJournalEntry();
+      return;
+    }
+    const normalizedCategory =
+      JOURNAL_CATEGORIES.includes(journalDraft.category) && journalDraft.category !== 'All'
+        ? journalDraft.category
+        : 'Personal';
+    const existing = journalEntries.find((entry) => entry.id === journalEditingId);
+    const entryId = journalEditingId ?? `jrnl-${Date.now()}`;
+    const createdAt = existing?.createdAt ?? new Date().toISOString();
+    const nextEntry = {
+      id: entryId,
+      title: trimmedTitle || 'Untitled Note',
+      category: normalizedCategory,
+      content: journalDraft.content ?? '',
+      createdAt,
+    };
+    const nextEntries = journalEditingId
+      ? journalEntries.map((entry) => (entry.id === journalEditingId ? nextEntry : entry))
+      : [nextEntry, ...journalEntries];
+    setJournalEntries(nextEntries);
+    setJournalMode('list');
+    setJournalEditingId(null);
+    setJournalDraft(EMPTY_JOURNAL_ENTRY);
+    await savePatch({ journal: nextEntries });
   };
 
   const rollDice = (sides) => {
@@ -2843,20 +2973,159 @@ export default function Campaign() {
                     </div>
                   ) : (
                     <div className="grid gap-3">
-                      {journalEntries.length === 0 && (
-                        <p className="m-0 text-sm text-[var(--soft)]">No journal entries yet.</p>
-                      )}
-                      {journalEntries.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className="rounded-[14px] border border-white/10 bg-white/5 p-3 text-sm"
-                        >
-                          <div className="flex justify-between gap-2 font-semibold">
-                            <span>{entry.date}</span>
+                      {journalMode === 'list' ? (
+                        <>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="search"
+                              value={journalQuery}
+                              onChange={(event) => setJournalQuery(event.target.value)}
+                              placeholder="Search notes..."
+                              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-[var(--ink)] placeholder:text-[var(--soft)] focus:border-[var(--accent)] focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleStartJournalEntry}
+                              className="rounded-xl border border-[rgba(214,179,106,0.6)] px-3 py-2 text-base font-semibold text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)]"
+                              aria-label="Add journal note"
+                            >
+                              +
+                            </button>
                           </div>
-                          <p className="m-0 text-[var(--soft)]">{entry.text}</p>
+                          <div className="flex flex-wrap gap-2 text-[0.7rem]">
+                            {JOURNAL_CATEGORIES.map((category) => {
+                              const isActive = journalFilter === category;
+                              const accentClass = JOURNAL_CATEGORY_STYLES[category] ?? 'border-white/20 text-[var(--soft)]';
+                              return (
+                                <button
+                                  key={category}
+                                  type="button"
+                                  onClick={() => setJournalFilter(category)}
+                                  className={`rounded-full border px-3 py-1 font-semibold uppercase tracking-[0.16em] transition ${
+                                    isActive
+                                      ? `${accentClass} shadow-[0_0_12px_rgba(214,179,106,0.12)]`
+                                      : 'border-white/10 text-[var(--soft)] hover:border-white/30'
+                                  }`}
+                                >
+                                  {category}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="grid gap-2">
+                            {filteredJournalEntries.length === 0 ? (
+                              <div className="rounded-[14px] border border-white/10 bg-white/5 p-4 text-center text-sm text-[var(--soft)]">
+                                No notes yet. Add one to get started.
+                              </div>
+                            ) : (
+                              filteredJournalEntries.map((entry) => (
+                                <button
+                                  key={entry.id}
+                                  type="button"
+                                  onClick={() => handleEditJournalEntry(entry)}
+                                  className="rounded-[14px] border border-white/10 bg-white/5 p-3 text-left text-sm transition hover:border-[rgba(214,179,106,0.4)]"
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <p className="m-0 font-semibold">{entry.title}</p>
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[0.65rem] uppercase tracking-[0.14em] ${
+                                        JOURNAL_CATEGORY_STYLES[entry.category] ?? 'border-white/20 text-[var(--soft)]'
+                                      }`}
+                                    >
+                                      {entry.category}
+                                    </span>
+                                  </div>
+                                  <p className="m-0 mt-1 text-xs text-[var(--soft)] line-clamp-2">
+                                    {stripHtml(entry.content) || 'No content yet.'}
+                                  </p>
+                                  <p className="m-0 mt-2 text-[0.65rem] uppercase tracking-[0.16em] text-[var(--soft)]">
+                                    {new Date(entry.createdAt ?? Date.now()).toLocaleDateString()}
+                                  </p>
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="grid gap-3">
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={journalDraft.title}
+                              onChange={(event) =>
+                                setJournalDraft((prev) => ({ ...prev, title: event.target.value }))
+                              }
+                              placeholder="Note title..."
+                              className="flex-1 rounded-xl border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[var(--ink)] placeholder:text-[var(--soft)] focus:border-[var(--accent)] focus:outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleSaveJournalEntry}
+                              className="rounded-xl border border-[rgba(214,179,106,0.6)] px-2.5 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)] transition hover:-translate-y-0.5 hover:border-[rgba(214,179,106,0.9)]"
+                            >
+                              Save
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleCancelJournalEntry}
+                              className="rounded-xl border border-white/10 px-2.5 py-1.5 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:border-white/30 hover:text-[var(--ink)]"
+                            >
+                              Back
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5 text-[0.6rem]">
+                            {JOURNAL_CATEGORIES.filter((category) => category !== 'All').map((category) => {
+                              const isActive = journalDraft.category === category;
+                              const accentClass = JOURNAL_CATEGORY_STYLES[category] ?? 'border-white/20 text-[var(--soft)]';
+                              return (
+                                <button
+                                  key={category}
+                                  type="button"
+                                  onClick={() =>
+                                    setJournalDraft((prev) => ({ ...prev, category }))
+                                  }
+                                  className={`rounded-full border px-2.5 py-0.5 font-semibold uppercase tracking-[0.16em] transition ${
+                                    isActive
+                                      ? `${accentClass} shadow-[0_0_12px_rgba(214,179,106,0.12)]`
+                                      : 'border-white/10 text-[var(--soft)] hover:border-white/30'
+                                  }`}
+                                >
+                                  {category}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div id="journal-toolbar" className="ql-toolbar ql-snow journal-toolbar">
+                            <span className="ql-formats">
+                              <button type="button" className="ql-bold"></button>
+                              <button type="button" className="ql-italic"></button>
+                              <button type="button" className="ql-underline"></button>
+                              <button type="button" className="ql-strike"></button>
+                            </span>
+                            <span className="ql-formats">
+                              <button type="button" className="ql-list" value="ordered"></button>
+                              <button type="button" className="ql-list" value="bullet"></button>
+                            </span>
+                            <span className="ql-formats">
+                              <select className="ql-align"></select>
+                            </span>
+                            <span className="ql-formats">
+                              <button type="button" className="ql-clean"></button>
+                            </span>
+                          </div>
+                          <ReactQuill
+                            theme="snow"
+                            value={journalDraft.content}
+                            onChange={(value) =>
+                              setJournalDraft((prev) => ({ ...prev, content: value }))
+                            }
+                            modules={JOURNAL_MODULES}
+                            formats={JOURNAL_FORMATS}
+                            className="journal-quill"
+                            placeholder="Write your note here..."
+                          />
                         </div>
-                      ))}
+                      )}
                     </div>
                   )}
                 </div>

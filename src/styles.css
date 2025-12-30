@@ -91,3 +91,62 @@
     overflow: hidden;
   }
 }
+
+.journal-toolbar {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px 12px 0 0;
+  background: rgba(8, 10, 12, 0.85);
+  padding: 4px 6px;
+  font-size: 0.7rem;
+}
+
+.journal-toolbar .ql-formats {
+  margin-right: 8px;
+}
+
+.journal-toolbar button {
+  color: var(--ink);
+}
+
+.journal-toolbar button:hover,
+.journal-toolbar button.ql-active {
+  color: var(--accent);
+}
+
+.journal-toolbar .ql-stroke {
+  stroke: currentColor;
+}
+
+.journal-toolbar .ql-fill {
+  fill: currentColor;
+}
+
+.journal-toolbar .ql-picker {
+  color: var(--ink);
+}
+
+.journal-toolbar .ql-picker-options {
+  background: #0f1117;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.journal-quill .ql-container {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: none;
+  border-radius: 0 0 12px 12px;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.journal-quill .ql-editor {
+  min-height: 160px;
+  max-height: 200px;
+  overflow-y: auto;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.journal-quill .ql-editor.ql-blank::before {
+  color: rgba(154, 164, 178, 0.8);
+  font-style: normal;
+}
