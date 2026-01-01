@@ -68,6 +68,54 @@ create trigger set_updated_at
 before update on public.campaigns
 for each row execute function public.touch_updated_at();
 
+create table if not exists public.admin_emails (
+  email text primary key
+);
+
+alter table public.admin_emails enable row level security;
+
+drop policy if exists "Admin emails self read" on public.admin_emails;
+create policy "Admin emails self read" on public.admin_emails
+  for select
+  using ((auth.jwt() ->> 'email') = email);
+
+create table if not exists public.game_data (
+  key text primary key,
+  value jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+drop trigger if exists set_game_data_updated_at on public.game_data;
+
+create trigger set_game_data_updated_at
+before update on public.game_data
+for each row execute function public.touch_updated_at();
+
+alter table public.game_data enable row level security;
+
+drop policy if exists "Game data public read" on public.game_data;
+create policy "Game data public read" on public.game_data
+  for select
+  using (true);
+
+drop policy if exists "Game data admin write" on public.game_data;
+create policy "Game data admin write" on public.game_data
+  for all
+  using (
+    exists (
+      select 1
+      from public.admin_emails
+      where admin_emails.email = (auth.jwt() ->> 'email')
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.admin_emails
+      where admin_emails.email = (auth.jwt() ->> 'email')
+    )
+  );
+
 alter table public.campaigns enable row level security;
 
 drop policy if exists "Public campaigns read" on public.campaigns;
@@ -85,3 +133,8 @@ create policy "Public campaigns update" on public.campaigns
   for update
   using (true)
   with check (true);
+
+drop policy if exists "Public campaigns delete" on public.campaigns;
+create policy "Public campaigns delete" on public.campaigns
+  for delete
+  using (true);

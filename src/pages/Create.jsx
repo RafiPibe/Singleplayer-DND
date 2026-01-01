@@ -1,20 +1,26 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CLASSES, CUSTOM_CLASS, REPUTATION, HP_RANGE } from '../data/classes.js';
-import { ABILITIES, STANDARD_ARRAY, SKILLS, getAbilityModifier, getSaveModifier } from '../data/abilities.js';
-import { RACES } from '../data/races.js';
+import { STANDARD_ARRAY, getAbilityModifier, getSaveModifier } from '../data/abilities.js';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
+import { useGameData } from '../lib/gameData.js';
 
 const TOTAL_STEPS = 6;
 const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
 const rollInRange = (min, max) => min + Math.floor(Math.random() * (max - min + 1));
-const rollHpValue = () => rollInRange(HP_RANGE.min, HP_RANGE.max);
 const rollAbilityScore = () => {
   const rolls = Array.from({ length: 4 }, () => rollDie(6)).sort((a, b) => a - b);
   return rolls.slice(1).reduce((sum, value) => sum + value, 0);
 };
 const SAVE_PROFICIENCY_BONUS = 2;
+
+const buildMapFromKeys = (keys, initialValue = 0) => {
+  const base = {};
+  (keys ?? []).forEach((key) => {
+    base[key] = initialValue;
+  });
+  return base;
+};
 
 const ALIGNMENTS = [
   'Lawful Good',
@@ -30,6 +36,19 @@ const ALIGNMENTS = [
 
 export default function Create() {
   const navigate = useNavigate();
+  const {
+    abilities,
+    skills,
+    races,
+    classes,
+    reputation,
+    hpRange,
+    customClass,
+  } = useGameData();
+  const rollHpValue = useCallback(
+    () => rollInRange(hpRange.min, hpRange.max),
+    [hpRange.max, hpRange.min]
+  );
   const [step, setStep] = useState(1);
   const [name, setName] = useState('');
   const [race, setRace] = useState('');
@@ -45,29 +64,11 @@ export default function Create() {
   const [customClassName, setCustomClassName] = useState('');
   const [customDescription, setCustomDescription] = useState('');
   const [abilityMethod, setAbilityMethod] = useState('roll');
-  const [abilityScores, setAbilityScores] = useState(() => {
-    const base = {};
-    ABILITIES.forEach((ability) => {
-      base[ability] = 0;
-    });
-    return base;
-  });
-  const [saveRolls, setSaveRolls] = useState(() => {
-    const base = {};
-    ABILITIES.forEach((ability) => {
-      base[ability] = 0;
-    });
-    return base;
-  });
+  const [abilityScores, setAbilityScores] = useState(() => buildMapFromKeys(abilities));
+  const [saveRolls, setSaveRolls] = useState(() => buildMapFromKeys(abilities));
   const [customSavePrimary, setCustomSavePrimary] = useState('');
   const [customSaveSecondary, setCustomSaveSecondary] = useState('');
-  const [customReputation, setCustomReputation] = useState(() => {
-    const base = {};
-    REPUTATION.forEach((rep) => {
-      base[rep] = 0;
-    });
-    return base;
-  });
+  const [customReputation, setCustomReputation] = useState(() => buildMapFromKeys(reputation));
   const [classReputation, setClassReputation] = useState(() => ({}));
   const [rolledHp, setRolledHp] = useState(() => rollHpValue());
   const [hpDisplay, setHpDisplay] = useState(() => rollHpValue());
@@ -81,8 +82,8 @@ export default function Create() {
   const [saving, setSaving] = useState(false);
   const timersRef = useRef({ intervals: new Set(), timeouts: new Set() });
 
-  const classOptions = useMemo(() => [...CLASSES, CUSTOM_CLASS], []);
-  const raceConfig = useMemo(() => RACES.find((entry) => entry.name === race), [race]);
+  const classOptions = useMemo(() => [...classes, customClass], [classes, customClass]);
+  const raceConfig = useMemo(() => races.find((entry) => entry.name === race), [races, race]);
   const activeRaceVariant = raceConfig?.variants?.[raceVariantIndex] ?? null;
   const raceChoiceConfig = activeRaceVariant?.choices ?? raceConfig?.choices ?? [];
   const raceHasUniqueChoices = activeRaceVariant?.unique ?? false;
@@ -104,7 +105,7 @@ export default function Create() {
 
   const baseAbilityScores = useMemo(() => {
     const base = {};
-    ABILITIES.forEach((ability) => {
+    abilities.forEach((ability) => {
       const value =
         abilityMethod === 'roll'
           ? rollingAbilities[ability] ?? abilityScores[ability]
@@ -112,7 +113,7 @@ export default function Create() {
       base[ability] = Number.isFinite(value) ? value : 0;
     });
     return base;
-  }, [abilityMethod, abilityScores, rollingAbilities]);
+  }, [abilities, abilityMethod, abilityScores, rollingAbilities]);
 
   const finalAbilityScores = useMemo(() => {
     const withBoosts = { ...baseAbilityScores };
@@ -173,17 +174,50 @@ export default function Create() {
   }, [race, raceVariantIndex, raceChoiceConfig.length]);
 
   useEffect(() => {
+    setAbilityScores((prev) => {
+      const next = buildMapFromKeys(abilities);
+      abilities.forEach((ability) => {
+        if (prev && Object.prototype.hasOwnProperty.call(prev, ability)) {
+          next[ability] = prev[ability];
+        }
+      });
+      return next;
+    });
+    setSaveRolls((prev) => {
+      const next = buildMapFromKeys(abilities);
+      abilities.forEach((ability) => {
+        if (prev && Object.prototype.hasOwnProperty.call(prev, ability)) {
+          next[ability] = prev[ability];
+        }
+      });
+      return next;
+    });
+  }, [abilities]);
+
+  useEffect(() => {
+    setCustomReputation((prev) => {
+      const next = buildMapFromKeys(reputation);
+      reputation.forEach((rep) => {
+        if (prev && Object.prototype.hasOwnProperty.call(prev, rep)) {
+          next[rep] = prev[rep];
+        }
+      });
+      return next;
+    });
+  }, [reputation]);
+
+  useEffect(() => {
     if (abilityMethod === 'standard') {
       setRollingAbilities({});
       setAbilityScores((prev) => {
         const reset = {};
-        ABILITIES.forEach((ability) => {
+        abilities.forEach((ability) => {
           reset[ability] = 0;
         });
         return reset;
       });
     }
-  }, [abilityMethod]);
+  }, [abilityMethod, abilities]);
 
   const animateRollSet = (keys, randomFn, setRollingMap, applyFinal) => {
     const intervalId = setInterval(() => {
@@ -235,19 +269,19 @@ export default function Create() {
   };
 
   const rollAllAbilities = () => {
-    animateRollSet(ABILITIES, rollAbilityScore, setRollingAbilities, (final) => {
+    animateRollSet(abilities, rollAbilityScore, setRollingAbilities, (final) => {
       setAbilityScores(final);
     });
   };
 
   const rollAllReputation = () => {
-    animateRollSet(REPUTATION, rollRepValue, setRollingReputation, (final) => {
+    animateRollSet(reputation, rollRepValue, setRollingReputation, (final) => {
       setCustomReputation(final);
     });
   };
 
   const rollReputationSet = () => {
-    if (selectedClass === CUSTOM_CLASS.name) {
+    if (selectedClass === customClass.name) {
       rollAllReputation();
     } else {
       rollClassReputation();
@@ -267,8 +301,8 @@ export default function Create() {
   };
 
   const rollClassReputation = () => {
-    if (!selectedClass || selectedClass === CUSTOM_CLASS.name) return;
-    animateRollSet(REPUTATION, rollRepValue, setRollingClassReputation, (final) => {
+    if (!selectedClass || selectedClass === customClass.name) return;
+    animateRollSet(reputation, rollRepValue, setRollingClassReputation, (final) => {
       setClassReputation((prev) => ({
         ...prev,
         [selectedClass]: final,
@@ -277,7 +311,7 @@ export default function Create() {
   };
 
   const rollAllSavingThrows = () => {
-    animateRollSet(ABILITIES, rollSaveValue, setRollingSaveRolls, (final) => {
+    animateRollSet(abilities, rollSaveValue, setRollingSaveRolls, (final) => {
       setSaveRolls((prev) => ({ ...prev, ...final }));
     });
   };
@@ -289,10 +323,10 @@ export default function Create() {
   };
 
   useEffect(() => {
-    if (selectedClass === CUSTOM_CLASS.name) {
+    if (selectedClass === customClass.name) {
       setError('');
     }
-  }, [selectedClass, customNickname, customClassName, customDescription]);
+  }, [selectedClass, customNickname, customClassName, customDescription, customClass.name]);
 
   useEffect(() => {
     if (!selectedClass) return;
@@ -303,24 +337,18 @@ export default function Create() {
     setRollingReputation({});
     setRollingClassReputation({});
     setRollingSaveRolls({});
-    setSaveRolls((prev) => {
-      const next = { ...prev };
-      ABILITIES.forEach((ability) => {
-        next[ability] = 0;
-      });
-      return next;
-    });
+    setSaveRolls(buildMapFromKeys(abilities));
     setCustomSavePrimary('');
     setCustomSaveSecondary('');
-  }, [selectedClass]);
+  }, [selectedClass, abilities, rollHpValue]);
 
   const currentClassDetails = useMemo(() => {
-    if (selectedClass === CUSTOM_CLASS.name) {
-      const nickname = customNickname.trim() || CUSTOM_CLASS.nickname;
-      const role = customClassName.trim() || CUSTOM_CLASS.role;
-      const description = customDescription.trim() || CUSTOM_CLASS.description;
+    if (selectedClass === customClass.name) {
+      const nickname = customNickname.trim() || customClass.nickname;
+      const role = customClassName.trim() || customClass.role;
+      const description = customDescription.trim() || customClass.description;
       return {
-        name: CUSTOM_CLASS.name,
+        name: customClass.name,
         nickname,
         role,
         displayName: `${nickname} (${role})`,
@@ -331,7 +359,7 @@ export default function Create() {
       };
     }
 
-    const selected = CLASSES.find((cls) => cls.name === selectedClass);
+    const selected = classes.find((cls) => cls.name === selectedClass);
     if (!selected) return null;
 
     const reputation = classReputation[selected.name] ?? selected.reputation;
@@ -356,13 +384,15 @@ export default function Create() {
     customSaveSecondary,
     rolledHp,
     classReputation,
+    classes,
+    customClass,
   ]);
 
   const saveProficiencies = currentClassDetails?.saveProficiencies ?? [];
 
   const getRepValue = (rep) => {
     if (!currentClassDetails) return 0;
-    if (selectedClass === CUSTOM_CLASS.name) {
+    if (selectedClass === customClass.name) {
       return rollingReputation[rep] ?? customReputation[rep];
     }
     return rollingClassReputation[rep] ?? currentClassDetails.reputation[rep];
@@ -403,7 +433,7 @@ export default function Create() {
       if (!selectedClass) {
         return 'Choose a class to continue.';
       }
-      if (selectedClass === CUSTOM_CLASS.name) {
+      if (selectedClass === customClass.name) {
         if (customNickname.trim().length < 2 || customClassName.trim().length < 2) {
           return 'Add a nickname and class name for your custom class.';
         }
@@ -417,11 +447,11 @@ export default function Create() {
           return 'Choose two different saving throw proficiencies.';
         }
       }
-      const missingAbilities = ABILITIES.some((ability) => (baseAbilityScores[ability] ?? 0) <= 0);
+      const missingAbilities = abilities.some((ability) => (baseAbilityScores[ability] ?? 0) <= 0);
       if (missingAbilities) {
         return 'Assign all ability scores before continuing.';
       }
-      const missingSaves = ABILITIES.some((ability) => (saveRolls[ability] ?? 0) <= 0);
+      const missingSaves = abilities.some((ability) => (saveRolls[ability] ?? 0) <= 0);
       if (missingSaves) {
         return 'Roll all saving throws before continuing.';
       }
@@ -452,7 +482,7 @@ export default function Create() {
     }
     if (stepNumber === 5) {
       if (!selectedClass) return false;
-      if (selectedClass === CUSTOM_CLASS.name) {
+      if (selectedClass === customClass.name) {
         if (
           customNickname.trim().length < 2 ||
           customClassName.trim().length < 2 ||
@@ -463,8 +493,8 @@ export default function Create() {
         if (!customSavePrimary || !customSaveSecondary) return false;
         if (customSavePrimary === customSaveSecondary) return false;
       }
-      const hasAbilities = ABILITIES.every((ability) => (baseAbilityScores[ability] ?? 0) > 0);
-      const hasSaves = ABILITIES.every((ability) => (saveRolls[ability] ?? 0) > 0);
+      const hasAbilities = abilities.every((ability) => (baseAbilityScores[ability] ?? 0) > 0);
+      const hasSaves = abilities.every((ability) => (saveRolls[ability] ?? 0) > 0);
       return hasAbilities && hasSaves;
     }
     if (stepNumber === 6) return backstory.trim().length >= 20;
@@ -514,13 +544,13 @@ export default function Create() {
     const genderValue = gender === 'Custom' ? genderCustom.trim() : gender;
     const raceValue = race === 'Custom' ? customRaceName.trim() : race;
     const abilityProgress = {};
-    ABILITIES.forEach((ability) => {
+    abilities.forEach((ability) => {
       abilityProgress[ability] = 0;
     });
-    const skills = {};
+    const skillsPayload = {};
     const skillProgress = {};
-    SKILLS.forEach((skill) => {
-      skills[skill] = 0;
+    skills.forEach((skill) => {
+      skillsPayload[skill] = 0;
       skillProgress[skill] = 0;
     });
 
@@ -536,7 +566,7 @@ export default function Create() {
       stats: finalAbilityScores,
       ability_scores: finalAbilityScores,
       ability_progress: abilityProgress,
-      skills,
+      skills: skillsPayload,
       skill_progress: skillProgress,
       skill_points: 0,
       saving_throws: saveRolls,
@@ -618,7 +648,7 @@ export default function Create() {
                 <div className="grid gap-2.5">
                   <span className="font-['Cinzel'] text-[1.5rem]">Choose your race</span>
                   <div className="grid gap-3 max-[800px]:grid-cols-2 min-[801px]:grid-cols-4">
-                    {RACES.map((entry) => {
+                    {races.map((entry) => {
                       const isActive = race === entry.name;
                       return (
                         <button
@@ -846,7 +876,7 @@ export default function Create() {
                   <div className="min-h-full rounded-2xl border border-white/10 bg-white/5 p-4">
                     {currentClassDetails ? (
                       <>
-                        {selectedClass === CUSTOM_CLASS.name ? (
+                        {selectedClass === customClass.name ? (
                           <div className="grid gap-3">
                             <div className="flex flex-wrap items-center gap-2.5">
                               <h3 className="text-lg">{currentClassDetails.nickname ?? currentClassDetails.name}</h3>
@@ -951,7 +981,7 @@ export default function Create() {
                             </div>
                           </div>
                           <div className="grid gap-2">
-                            {ABILITIES.map((ability) => {
+                            {abilities.map((ability) => {
                               const baseValue = baseAbilityScores[ability] ?? 0;
                               const boostValue = raceBoosts[ability] ?? 0;
                               const finalValue = finalAbilityScores[ability] ?? 0;
@@ -1026,7 +1056,7 @@ export default function Create() {
                               Roll all
                             </button>
                           </div>
-                          {selectedClass === CUSTOM_CLASS.name && (
+                          {selectedClass === customClass.name && (
                             <div className="grid gap-2">
                               <div className="grid grid-cols-2 gap-2 text-xs text-[var(--soft)]">
                                 <label className="grid gap-2">
@@ -1037,7 +1067,7 @@ export default function Create() {
                                     onChange={(event) => setCustomSavePrimary(event.target.value)}
                                   >
                                     <option value="">Select</option>
-                                    {ABILITIES.map((ability) => (
+                                    {abilities.map((ability) => (
                                       <option key={`save-primary-${ability}`} value={ability}>
                                         {ability}
                                       </option>
@@ -1052,7 +1082,7 @@ export default function Create() {
                                     onChange={(event) => setCustomSaveSecondary(event.target.value)}
                                   >
                                     <option value="">Select</option>
-                                    {ABILITIES.filter((ability) => ability !== customSavePrimary).map((ability) => (
+                                    {abilities.filter((ability) => ability !== customSavePrimary).map((ability) => (
                                       <option key={`save-secondary-${ability}`} value={ability}>
                                         {ability}
                                       </option>
@@ -1063,7 +1093,7 @@ export default function Create() {
                             </div>
                           )}
                           <div className="grid gap-2">
-                            {ABILITIES.map((ability) => {
+                            {abilities.map((ability) => {
                               const rollValue = rollingSaveRolls[ability] ?? saveRolls[ability];
                               const saveMod = rollValue > 0 ? getSaveModifier(rollValue) : 0;
                               const proficient = saveProficiencies.includes(ability);
@@ -1112,7 +1142,7 @@ export default function Create() {
                           </button>
                         </div>
                         <div className="grid grid-cols-[repeat(auto-fit,minmax(160px,1fr))] gap-x-3 gap-y-2">
-                          {REPUTATION.map((rep) => (
+                          {reputation.map((rep) => (
                             <div className="flex justify-between text-sm" key={rep}>
                               <span>{rep}</span>
                               <span style={getValueStyle(getRepValue(rep), 20)}>

@@ -4,14 +4,8 @@ import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
-import {
-  ABILITIES,
-  SKILLS,
-  SKILLS_BY_ABILITY,
-  getAbilityModifier,
-  getAbilityRequirement,
-  getSaveModifier,
-} from '../data/abilities.js';
+import { getAbilityModifier, getAbilityRequirement, getSaveModifier } from '../data/abilities.js';
+import { useGameData } from '../lib/gameData.js';
 
 const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
 
@@ -221,6 +215,14 @@ const EMPTY_JOURNAL_ENTRY = {
   title: '',
   category: 'Personal',
   content: '',
+};
+
+const buildMapFromKeys = (keys, initialValue = 0) => {
+  const base = {};
+  (keys ?? []).forEach((key) => {
+    base[key] = initialValue;
+  });
+  return base;
 };
 
 const sampleJournalEntries = [
@@ -1219,6 +1221,7 @@ const SPELL_CATEGORY_STYLES = {
 
 export default function Campaign() {
   const { id } = useParams();
+  const { abilities, skills, skillsByAbility } = useGameData();
   const [campaign, setCampaign] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1250,6 +1253,42 @@ export default function Campaign() {
   const [abilityProgress, setAbilityProgress] = useState({});
   const [skillLevels, setSkillLevels] = useState({});
   const [skillProgress, setSkillProgress] = useState({});
+
+  useEffect(() => {
+    if (!abilities.length) return;
+    setAbilityScores((prev) => {
+      const next = buildMapFromKeys(abilities, 10);
+      abilities.forEach((ability) => {
+        if (Number.isFinite(prev?.[ability])) next[ability] = prev[ability];
+      });
+      return next;
+    });
+    setAbilityProgress((prev) => {
+      const next = buildMapFromKeys(abilities, 0);
+      abilities.forEach((ability) => {
+        if (Number.isFinite(prev?.[ability])) next[ability] = prev[ability];
+      });
+      return next;
+    });
+  }, [abilities]);
+
+  useEffect(() => {
+    if (!skills.length) return;
+    setSkillLevels((prev) => {
+      const next = buildMapFromKeys(skills, 0);
+      skills.forEach((skill) => {
+        if (Number.isFinite(prev?.[skill])) next[skill] = prev[skill];
+      });
+      return next;
+    });
+    setSkillProgress((prev) => {
+      const next = buildMapFromKeys(skills, 0);
+      skills.forEach((skill) => {
+        if (Number.isFinite(prev?.[skill])) next[skill] = prev[skill];
+      });
+      return next;
+    });
+  }, [skills]);
   const [skillPoints, setSkillPoints] = useState(0);
   const [saveRolls, setSaveRolls] = useState({});
   const [spellCategory, setSpellCategory] = useState('');
@@ -1352,13 +1391,13 @@ export default function Campaign() {
       return campaign.save_proficiencies;
     }
     if (SAVE_PROFICIENCIES[classKey]) return SAVE_PROFICIENCIES[classKey];
-    const sorted = [...ABILITIES].sort((a, b) => {
+    const sorted = [...abilities].sort((a, b) => {
       const aScore = abilityScoresByName[a] ?? 10;
       const bScore = abilityScoresByName[b] ?? 10;
       return bScore - aScore;
     });
     return sorted.slice(0, 2);
-  }, [campaign, classKey, abilityScoresByName]);
+  }, [campaign, classKey, abilityScoresByName, abilities]);
   const spellbook = useMemo(() => {
     const stored = campaign?.spellbook ?? campaign?.spells;
     if (Array.isArray(stored)) return stored;
@@ -1802,8 +1841,8 @@ export default function Campaign() {
   const buffFromConsumable = (item, healAmount) => {
     const effect = item.effect ?? item.name ?? 'Potion';
     const potency = item.potency ? ` ${item.potency}` : '';
-    const abilityTarget = item.ability ?? (ABILITIES.includes(item.effect) ? item.effect : null);
-    const skillTarget = item.skill ?? (SKILLS.includes(item.effect) ? item.effect : null);
+    const abilityTarget = item.ability ?? (abilities.includes(item.effect) ? item.effect : null);
+    const skillTarget = item.skill ?? (skills.includes(item.effect) ? item.effect : null);
     if (abilityTarget) {
       const boost = item.abilityScoreBoost ?? item.abilityBoost;
       if (Number.isFinite(boost)) {
@@ -1976,8 +2015,8 @@ export default function Campaign() {
     });
     const nextBuff = buffFromConsumable(item, healAmount);
     const nextBuffs = [nextBuff, ...activeBuffs].slice(0, 5);
-    const abilityTarget = item.ability ?? (ABILITIES.includes(item.effect) ? item.effect : null);
-    const skillTarget = item.skill ?? (SKILLS.includes(item.effect) ? item.effect : null);
+    const abilityTarget = item.ability ?? (abilities.includes(item.effect) ? item.effect : null);
+    const skillTarget = item.skill ?? (skills.includes(item.effect) ? item.effect : null);
     const abilityScoreBoost = item.abilityScoreBoost ?? item.abilityBoost;
     const abilityXp = Number.isFinite(item.abilityXp)
       ? item.abilityXp
@@ -1999,7 +2038,7 @@ export default function Campaign() {
     let nextPlayerLevel = playerLevel;
     let nextPlayerXp = playerXp;
 
-    if (abilityTarget && ABILITIES.includes(abilityTarget)) {
+    if (abilityTarget && abilities.includes(abilityTarget)) {
       if (Number.isFinite(abilityScoreBoost)) {
         const currentScore = abilityScoresByName?.[abilityTarget] ?? 10;
         const boostedScore = Math.min(30, currentScore + abilityScoreBoost);
@@ -2026,7 +2065,7 @@ export default function Campaign() {
       }
     }
 
-    if (skillTarget && SKILLS.includes(skillTarget) && skillXp > 0) {
+    if (skillTarget && skills.includes(skillTarget) && skillXp > 0) {
       const currentLevel = skillLevelsByName?.[skillTarget] ?? 0;
       const currentProgress = skillProgressByName?.[skillTarget] ?? 0;
       const updated = applySkillProgress(currentLevel, currentProgress, skillXp);
@@ -2629,11 +2668,11 @@ export default function Campaign() {
                     <span>Ability Scores</span>
                     <span>Skill Points: {skillPoints}</span>
                   </div>
-                  {ABILITIES.map((ability) => {
+                  {abilities.map((ability) => {
                     const { score, required, progress } = getAbilityProgress(ability);
                     const modifier = getAbilityModifier(score);
                     const width = required ? (progress / required) * 100 : 100;
-                    const skills = SKILLS_BY_ABILITY[ability] ?? [];
+                    const abilitySkills = skillsByAbility[ability] ?? [];
                     return (
                       <div
                         key={ability}
@@ -2672,7 +2711,7 @@ export default function Campaign() {
                         </div>
                         {skills.length ? (
                           <div className="mt-3 grid gap-2 text-sm">
-                            {skills.map((skill) => {
+                          {abilitySkills.map((skill) => {
                               const { level, required: skillRequired, progress: skillProgressValue } =
                                 getSkillProgress(skill);
                               const skillWidth = (skillProgressValue / skillRequired) * 100;
@@ -3406,7 +3445,7 @@ export default function Campaign() {
                     </p>
                   </div>
                   <div className="grid gap-3">
-                    {ABILITIES.map((ability) => {
+                    {abilities.map((ability) => {
                       const roll = Number.isFinite(saveRolls?.[ability]) ? saveRolls[ability] : null;
                       const mod = roll ? getSaveModifier(roll) : 0;
                       const proficient = saveProficiencies.includes(ability);

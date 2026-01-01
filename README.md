@@ -12,3 +12,9 @@ Pages
 - /: homepage with campaign list
 - /create: character creation wizard
 - /campaign/:id: campaign view + dice tray
+- /admin: admin console (Supabase auth + admin email allowlist)
+
+Admin setup
+- Run the latest SQL in supabase.sql to create admin_emails and game_data tables.
+- Add your admin email in Supabase:
+  insert into public.admin_emails (email) values ('you@example.com');

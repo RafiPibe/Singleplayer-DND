@@ -1,39 +1,6 @@
-export const STATS = [
-  'Investigation',
-  'Aim',
-  'Brawling',
-  'One Handed',
-  'Acrobatics',
-  'Stealth',
-  'Deception',
-  'Performance',
-  'Seduction',
-  'Regeneration',
-  'Alteration',
-  'Illusion',
-  'Bartering',
-  'Climbing',
-  'Beastmastery',
-  'Ranged',
-  'Two Handed',
-  'Sleight Of Hand',
-  'Lockpicking',
-  'Persuasion',
-  'Intimidation',
-  'Destruction',
-  'Necromancy',
-  'Bloodmancy',
-  'Soulbinding',
-];
-
 export const REPUTATION = ['Honor', 'Bravery', 'Justice', 'Mercy', 'Loyalty', 'Generosity'];
 
 export const HP_RANGE = { min: 10, max: 20 };
-
-const BASE_STAT = 0;
-const CLASS_STATS = 5;
-const SECONDARY_STATS = 3;
-const LOW_STATS = -3;
 
 export const CLASSES = [
   {
@@ -164,42 +131,10 @@ export const CUSTOM_CLASS = {
   saveProficiencies: [],
 };
 
-export function buildStats(strengths = [], secondary = [], weaknesses = []) {
-  const stats = {};
-  STATS.forEach((stat) => {
-    stats[stat] = BASE_STAT;
-  });
-  strengths.forEach((stat) => {
-    if (stats[stat] !== undefined) stats[stat] = CLASS_STATS;
-  });
-  secondary.forEach((stat) => {
-    if (stats[stat] !== undefined) stats[stat] = SECONDARY_STATS;
-  });
-  weaknesses.forEach((stat) => {
-    if (stats[stat] !== undefined) stats[stat] = LOW_STATS;
-  });
-  return stats;
-}
-
 export function defaultReputation() {
   const rep = {};
   REPUTATION.forEach((name) => {
     rep[name] = 0;
   });
   return rep;
-}
-
-export function classStatsFromDescription(text) {
-  const seed = Array.from(text).reduce((acc, char) => acc + char.charCodeAt(0), 0) || 1;
-  const stats = {};
-  STATS.forEach((stat, index) => {
-    const value = ((seed + index * 17) % 11) - 5;
-    stats[stat] = value;
-  });
-  const reputation = {};
-  REPUTATION.forEach((rep, index) => {
-    const value = ((seed + index * 23) % 41) - 20;
-    reputation[rep] = value;
-  });
-  return { stats, reputation, hp: 10 + (seed % 16) };
 }
