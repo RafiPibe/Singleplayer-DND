@@ -22,7 +22,8 @@ Admin setup
 AI DM setup
 - Deploy the edge function in `supabase/functions/dm-chat`.
 - Set these function secrets in Supabase:
-  - OPENAI_API_KEY
+  - GEMINI_API_KEY (from Google AI Studio)
   - SERVICE_ROLE_KEY (service_role key from Supabase)
-  - Optional: OPENAI_MODEL (defaults to gpt-4o-mini)
+  - Optional: GEMINI_MODEL (defaults to gemini-2.0-flash)
 - Note: Supabase provides `SUPABASE_URL` automatically inside Edge Functions.
+- The `dm-chat` function is configured with `verify_jwt = false` to allow UID-only access.

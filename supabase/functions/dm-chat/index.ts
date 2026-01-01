@@ -7,7 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
-const MODEL = Deno.env.get("OPENAI_MODEL") ?? "gpt-4o-mini";
+const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash";
+const MODEL_ID = MODEL.replace(/^models\//, "");
 const DEFAULT_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
 
 const ensureArray = (value: unknown) => (Array.isArray(value) ? value : []);
@@ -208,7 +209,17 @@ const tools = [
       parameters: {
         type: "object",
         properties: {
-          changes: { type: "object", additionalProperties: { type: "number" } },
+          changes: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string" },
+                delta: { type: "number" },
+              },
+              required: ["name", "delta"],
+            },
+          },
         },
         required: ["changes"],
       },
@@ -469,12 +480,22 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     },
     update_reputation: (args) => {
       const rep = { ...ensureObject(next.reputation) } as Record<string, number>;
-      const changes = ensureObject(args.changes) as Record<string, number>;
-      Object.entries(changes).forEach(([key, delta]) => {
-        const current = asNumber(rep[key]);
-        const nextValue = clamp(current + asNumber(delta), -20, 20);
-        rep[key] = nextValue;
-      });
+      if (Array.isArray(args.changes)) {
+        args.changes.forEach((change: any) => {
+          const key = change?.name ?? "";
+          if (!key) return;
+          const current = asNumber(rep[key]);
+          const nextValue = clamp(current + asNumber(change?.delta), -20, 20);
+          rep[key] = nextValue;
+        });
+      } else {
+        const changes = ensureObject(args.changes) as Record<string, number>;
+        Object.entries(changes).forEach(([key, delta]) => {
+          const current = asNumber(rep[key]);
+          const nextValue = clamp(current + asNumber(delta), -20, 20);
+          rep[key] = nextValue;
+        });
+      }
       next.reputation = rep;
     },
     adjust_xp: (args) => {
@@ -597,10 +618,10 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
   };
 
   toolCalls.forEach((call) => {
-    const name = call?.function?.name;
+    const name = call?.name ?? call?.function?.name;
     if (!name || !handlers[name]) return;
-    let args = {};
-    if (call?.function?.arguments) {
+    let args = call?.args ?? {};
+    if (!Object.keys(args).length && call?.function?.arguments) {
       try {
         args = JSON.parse(call.function.arguments);
       } catch (_error) {
@@ -662,6 +683,14 @@ serve(async (req) => {
     const accessKey = payload?.accessKey ?? "";
     const location = payload?.location ?? DEFAULT_LOCATION;
 
+    console.log("dm-chat request", {
+      hasMessage: Boolean(message),
+      messageLength: message.length,
+      campaignId: campaignId ? String(campaignId).slice(0, 8) : null,
+      hasAccessKey: Boolean(accessKey),
+      model: MODEL_ID,
+    });
+
     if (!message) {
       return new Response(JSON.stringify({ error: "Message is required." }), {
         status: 400,
@@ -678,12 +707,17 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseKey =
       Deno.env.get("SERVICE_ROLE_KEY") ?? Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const openaiKey = Deno.env.get("OPENAI_API_KEY");
+    const geminiKey = Deno.env.get("GEMINI_API_KEY");
 
-    if (!supabaseUrl || !supabaseKey || !openaiKey) {
+    if (!supabaseUrl || !supabaseKey || !geminiKey) {
+      console.error("dm-chat env missing", {
+        hasSupabaseUrl: Boolean(supabaseUrl),
+        hasServiceRoleKey: Boolean(supabaseKey),
+        hasGeminiKey: Boolean(geminiKey),
+      });
       return new Response(
         JSON.stringify({
-          error: "Missing SUPABASE_URL, SERVICE_ROLE_KEY, or OPENAI_API_KEY.",
+          error: "Missing SUPABASE_URL, SERVICE_ROLE_KEY, or GEMINI_API_KEY.",
         }),
         {
           status: 500,
@@ -714,8 +748,7 @@ serve(async (req) => {
     const history = ensureArray(campaign.messages)
       .slice(-10)
       .map((entry: any) => ({
-        role:
-          entry.sender === campaign.name || entry.sender === "You" ? "user" : "assistant",
+        role: entry.sender === campaign.name || entry.sender === "You" ? "user" : "model",
         content: entry.content ?? "",
       }));
 
@@ -727,68 +760,96 @@ serve(async (req) => {
 
     const context = buildContext(campaign);
 
-    const messages = [
-      { role: "system", content: systemPrompt },
-      { role: "system", content: `Campaign context: ${JSON.stringify(context)}` },
-      ...history,
-      { role: "user", content: message },
+    const systemInstruction = `${systemPrompt}\nCampaign context: ${JSON.stringify(context)}`;
+
+    const contents = [
+      ...history.map((entry: any) => ({
+        role: entry.role,
+        parts: [{ text: entry.content }],
+      })),
+      { role: "user", parts: [{ text: message }] },
     ];
 
-    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${openaiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        messages,
-        tools,
-        tool_choice: "auto",
-        temperature: 0.7,
-      }),
-    });
+    const functionDeclarations = tools.map((tool) => tool.function);
+    const geminiResponse = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          contents,
+          tools: [{ function_declarations: functionDeclarations }],
+          system_instruction: { parts: [{ text: systemInstruction }] },
+          generationConfig: { temperature: 0.7 },
+        }),
+      }
+    );
 
-    if (!openaiResponse.ok) {
-      const errorBody = await openaiResponse.text();
+    if (!geminiResponse.ok) {
+      const errorBody = await geminiResponse.text();
+      console.error("dm-chat gemini error", {
+        status: geminiResponse.status,
+        body: errorBody,
+      });
       return new Response(JSON.stringify({ error: errorBody }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const openaiData = await openaiResponse.json();
-    const firstMessage = openaiData?.choices?.[0]?.message ?? {};
-    const toolCalls = firstMessage.tool_calls ?? [];
+    const geminiData = await geminiResponse.json();
+    const firstCandidate = geminiData?.candidates?.[0]?.content ?? { role: "model", parts: [] };
+    const parts = Array.isArray(firstCandidate.parts) ? firstCandidate.parts : [];
+    const toolCalls = parts
+      .filter((part: any) => part.functionCall)
+      .map((part: any) => ({
+        name: part.functionCall.name,
+        args: part.functionCall.args ?? {},
+      }));
+    let dmText = parts
+      .filter((part: any) => typeof part.text === "string")
+      .map((part: any) => part.text)
+      .join("");
 
     let updatedCampaign = { ...campaign };
 
     if (toolCalls.length) {
       updatedCampaign = applyToolCalls(updatedCampaign, toolCalls);
 
-      const toolResponses = toolCalls.map((call: any) => ({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify({ ok: true }),
+      const functionResponses = toolCalls.map((call: any) => ({
+        functionResponse: {
+          name: call.name,
+          response: { ok: true },
+        },
       }));
 
-      const followup = await fetch("https://api.openai.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${openaiKey}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          messages: [...messages, firstMessage, ...toolResponses],
-          temperature: 0.7,
-        }),
-      });
+      const followup = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [...contents, firstCandidate, { role: "function", parts: functionResponses }],
+            tools: [{ function_declarations: functionDeclarations }],
+            system_instruction: { parts: [{ text: systemInstruction }] },
+            generationConfig: { temperature: 0.7 },
+          }),
+        }
+      );
 
       if (followup.ok) {
         const followupData = await followup.json();
-        const followupMessage = followupData?.choices?.[0]?.message ?? {};
-        firstMessage.content = followupMessage.content ?? firstMessage.content;
+        const followupCandidate = followupData?.candidates?.[0]?.content ?? {};
+        const followupParts = Array.isArray(followupCandidate.parts) ? followupCandidate.parts : [];
+        const followupText = followupParts
+          .filter((part: any) => typeof part.text === "string")
+          .map((part: any) => part.text)
+          .join("");
+        dmText = followupText || dmText;
       }
     }
 
@@ -803,7 +864,7 @@ serve(async (req) => {
       id: makeId("dm"),
       sender: "Dungeon Master",
       location,
-      content: firstMessage.content ?? "The tavern is quiet for a moment...",
+      content: dmText || "The tavern is quiet for a moment...",
     };
 
     updatedCampaign.messages = [...ensureArray(campaign.messages), playerMessage, dmMessage];
@@ -821,6 +882,7 @@ serve(async (req) => {
       .single();
 
     if (saveError) {
+      console.error("dm-chat save error", saveError);
       return new Response(JSON.stringify({ error: saveError.message }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -832,6 +894,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (error) {
+    console.error("dm-chat crash", error);
     return new Response(JSON.stringify({ error: error?.message ?? "Unknown error." }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

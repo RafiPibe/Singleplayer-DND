@@ -1638,7 +1638,7 @@ export default function Campaign() {
     setMessageSending(true);
 
     try {
-      const { data, error: sendError } = await supabase.functions.invoke('dm-chat', {
+      const { data, error: sendError, response } = await supabase.functions.invoke('dm-chat', {
         body: {
           campaignId: campaign.id,
           accessKey: campaign.access_key,
@@ -1648,7 +1648,19 @@ export default function Campaign() {
       });
 
       if (sendError || data?.error) {
-        setMessageError(sendError?.message ?? data?.error ?? 'Unable to reach the Dungeon Master.');
+        let detail = data?.error ?? sendError?.message ?? 'Unable to reach the Dungeon Master.';
+        if (response) {
+          try {
+            const textBody = await response.text();
+            if (textBody) {
+              const parsed = JSON.parse(textBody);
+              detail = parsed?.error ?? textBody;
+            }
+          } catch (_error) {
+            // Ignore parsing failures, keep original detail.
+          }
+        }
+        setMessageError(detail);
         return;
       }
 
