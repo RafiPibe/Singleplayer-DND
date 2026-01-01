@@ -8,29 +8,10 @@ import { getAbilityModifier, getAbilityRequirement, getSaveModifier } from '../d
 import { useGameData } from '../lib/gameData.js';
 
 const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
-
-const sampleMessages = (characterName) => [
-  {
-    id: 'dm-1',
-    sender: 'Dungeon Master',
-    location: SAMPLE_LOCATION,
-    content:
-      "The firelight dances across the table as the tavern hushes. A courier slides a sealed letter toward you, its wax stamped with a river crest.",
-  },
-  {
-    id: 'dm-2',
-    sender: 'Dungeon Master',
-    location: SAMPLE_LOCATION,
-    content:
-      "Outside, thunder mutters over the city. The letter promises gold, answers, and a name you've never heard spoken aloud.",
-  },
-  {
-    id: 'player-1',
-    sender: characterName || 'You',
-    location: SAMPLE_LOCATION,
-    content: 'I break the seal and read it carefully, watching the room for anyone who flinches.',
-  },
-];
+const isUuid = (value) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value ?? ''
+  );
 
 const sampleQuests = [
   {
@@ -170,6 +151,33 @@ const normalizeInventory = (inventory) => {
 const stripHtml = (value) => {
   if (!value) return '';
   return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const renderMessageContent = (content) => {
+  if (!content) return null;
+  const text = String(content);
+  const regex = /<dm-entity>(.*?)<\/dm-entity>/gi;
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(text.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`dm-entity-${match.index}`} className="dm-entity">
+        {match[1]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return text;
+  if (lastIndex < text.length) {
+    output.push(text.slice(lastIndex));
+  }
+  return output;
 };
 
 const normalizeJournalEntries = (entries) => {
@@ -1229,6 +1237,8 @@ export default function Campaign() {
   const [questLog, setQuestLog] = useState([]);
   const [bounties, setBounties] = useState([]);
   const [messageInput, setMessageInput] = useState('');
+  const [messageError, setMessageError] = useState('');
+  const [messageSending, setMessageSending] = useState(false);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
@@ -1292,6 +1302,47 @@ export default function Campaign() {
   const [skillPoints, setSkillPoints] = useState(0);
   const [saveRolls, setSaveRolls] = useState({});
   const [spellCategory, setSpellCategory] = useState('');
+  const [uidCopied, setUidCopied] = useState(false);
+
+  const applyCampaignData = (data) => {
+    if (!data) return;
+    setCampaign(data);
+    const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
+    const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
+    setHpCurrent(currentHp);
+    setPlayerLevel(Number.isFinite(data.level) ? data.level : 1);
+    setPlayerXp(Number.isFinite(data.level_xp) ? data.level_xp : 0);
+    setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
+    setAbilityScores(data.ability_scores ?? data.stats ?? {});
+    setAbilityProgress(data.ability_progress ?? {});
+    setSkillLevels(data.skills ?? {});
+    setSkillProgress(data.skill_progress ?? {});
+    setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
+    setSaveRolls(data.saving_throws ?? {});
+    setMessages(Array.isArray(data.messages) ? data.messages : []);
+    setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
+    setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
+    if (Array.isArray(data.rumors) && data.rumors.length) {
+      setRumors(data.rumors);
+    } else {
+      setRumors(sampleRumors);
+    }
+    if (Array.isArray(data.journal) && data.journal.length) {
+      setJournalEntries(normalizeJournalEntries(data.journal));
+    } else {
+      setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
+    }
+    if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
+      setInventoryData(normalizeInventory(data.inventory));
+    } else {
+      setInventoryData(normalizeInventory(sampleInventoryData));
+    }
+    if (Array.isArray(data.ossuary) && data.ossuary.length) {
+      setOssuaryLoot(data.ossuary);
+    } else {
+      setOssuaryLoot(sampleOssuary);
+    }
+  };
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -1303,52 +1354,18 @@ export default function Campaign() {
         return;
       }
 
+      const lookupKey = isUuid(id) ? 'id' : 'access_key';
       const { data, error: fetchError } = await supabase
         .from('campaigns')
         .select('*')
-        .eq('id', id)
+        .eq(lookupKey, id)
         .single();
 
-        if (fetchError) {
-          setError(fetchError.message);
-          setCampaign(null);
-        } else {
-          setCampaign(data);
-          const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
-          const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
-          setHpCurrent(currentHp);
-          setPlayerLevel(Number.isFinite(data.level) ? data.level : 1);
-          setPlayerXp(Number.isFinite(data.level_xp) ? data.level_xp : 0);
-          setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
-        setAbilityScores(data.ability_scores ?? data.stats ?? {});
-        setAbilityProgress(data.ability_progress ?? {});
-        setSkillLevels(data.skills ?? {});
-        setSkillProgress(data.skill_progress ?? {});
-        setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
-        setSaveRolls(data.saving_throws ?? {});
-        setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
-        setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
-        setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
-        if (Array.isArray(data.rumors) && data.rumors.length) {
-          setRumors(data.rumors);
-        } else {
-          setRumors(sampleRumors);
-        }
-        if (Array.isArray(data.journal) && data.journal.length) {
-          setJournalEntries(normalizeJournalEntries(data.journal));
-        } else {
-          setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
-        }
-        if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
-          setInventoryData(normalizeInventory(data.inventory));
-        } else {
-          setInventoryData(normalizeInventory(sampleInventoryData));
-        }
-        if (Array.isArray(data.ossuary) && data.ossuary.length) {
-          setOssuaryLoot(data.ossuary);
-        } else {
-          setOssuaryLoot(sampleOssuary);
-        }
+      if (fetchError) {
+        setError(fetchError.message);
+        setCampaign(null);
+      } else {
+        applyCampaignData(data);
       }
       setLoading(false);
     };
@@ -1361,6 +1378,16 @@ export default function Campaign() {
   const savePatch = async (patch) => {
     if (!supabase || !campaign?.id) return;
     await supabase.from('campaigns').update(patch).eq('id', campaign.id);
+  };
+
+  const campaignUid = campaign?.access_key || (id && !isUuid(id) ? id : '');
+
+  const handleCopyUid = () => {
+    if (!campaignUid || !navigator?.clipboard) return;
+    navigator.clipboard.writeText(campaignUid).then(() => {
+      setUidCopied(true);
+      setTimeout(() => setUidCopied(false), 1500);
+    });
   };
 
   const abilityScoresByName = abilityScores;
@@ -1592,17 +1619,49 @@ export default function Campaign() {
   const handleSendMessage = async (event) => {
     event.preventDefault();
     const text = messageInput.trim();
-    if (!text) return;
+    if (!text || !campaign) return;
+    if (!supabase) {
+      setMessageError('Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
+
     const entry = {
       id: `player-${Date.now()}`,
-      sender: campaign?.name || 'You',
+      sender: campaign.name || 'You',
       location: SAMPLE_LOCATION,
       content: text,
     };
     const next = [...messages, entry];
     setMessages(next);
     setMessageInput('');
-    await savePatch({ messages: next });
+    setMessageError('');
+    setMessageSending(true);
+
+    try {
+      const { data, error: sendError } = await supabase.functions.invoke('dm-chat', {
+        body: {
+          campaignId: campaign.id,
+          accessKey: campaign.access_key,
+          message: text,
+          location: SAMPLE_LOCATION,
+        },
+      });
+
+      if (sendError || data?.error) {
+        setMessageError(sendError?.message ?? data?.error ?? 'Unable to reach the Dungeon Master.');
+        return;
+      }
+
+      if (data?.campaign) {
+        applyCampaignData(data.campaign);
+      } else if (data?.messages) {
+        setMessages(data.messages);
+      }
+    } catch (error) {
+      setMessageError(error?.message ?? 'Unable to reach the Dungeon Master.');
+    } finally {
+      setMessageSending(false);
+    }
   };
 
   const handleStartJournalEntry = () => {
@@ -3518,6 +3577,12 @@ export default function Campaign() {
           </header>
 
           <div className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl border border-white/10 bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            {messages.length === 0 ? (
+              <div className="grid gap-2 rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-[var(--soft)]">
+                <span className="font-semibold text-[var(--accent)]">No messages yet</span>
+                <span>Send your first action to begin the story.</span>
+              </div>
+            ) : null}
             {messages.map((message) => (
               <div key={message.id} className="grid gap-2 rounded-2xl bg-white/5 p-4">
                 <div className="grid gap-1">
@@ -3526,7 +3591,7 @@ export default function Campaign() {
                   </span>
                   <span className="text-sm text-[var(--soft)]">{message.location}</span>
                 </div>
-                <p className="m-0">{message.content}</p>
+                <p className="m-0 whitespace-pre-wrap">{renderMessageContent(message.content)}</p>
               </div>
             ))}
           </div>
@@ -3536,16 +3601,24 @@ export default function Campaign() {
               className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
               type="text"
               value={messageInput}
-              onChange={(event) => setMessageInput(event.target.value)}
+              onChange={(event) => {
+                setMessageInput(event.target.value);
+                if (messageError) setMessageError('');
+              }}
               placeholder="Describe your next move..."
+              disabled={messageSending}
             />
             <button
-              className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5"
+              className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
+              disabled={messageSending}
             >
-              Send
+              {messageSending ? 'Sending...' : 'Send'}
             </button>
           </form>
+          {messageError ? (
+            <p className="m-0 text-sm text-[var(--danger)]">{messageError}</p>
+          ) : null}
         </section>
 
         <aside className="grid max-h-[calc(100vh-140px)] gap-[18px] overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -3577,6 +3650,18 @@ export default function Campaign() {
           </div>
         </aside>
       </main>
+      {campaignUid ? (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-white/15 bg-[rgba(6,8,13,0.8)] px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[var(--soft)] shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur">
+          <span>UID {campaignUid}</span>
+          <button
+            type="button"
+            className="rounded-full border border-white/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+            onClick={handleCopyUid}
+          >
+            {uidCopied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

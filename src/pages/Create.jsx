@@ -582,7 +582,7 @@ export default function Create() {
     const { data, error: insertError } = await supabase
       .from('campaigns')
       .insert(payload)
-      .select('id')
+      .select('id, access_key')
       .single();
 
     if (insertError) {
@@ -591,7 +591,8 @@ export default function Create() {
       return;
     }
 
-    navigate(`/campaign/${data.id}`);
+    const campaignKey = data.access_key || data.id;
+    navigate(`/campaign/${campaignKey}`);
   };
 
   const handleKeyDown = (event) => {

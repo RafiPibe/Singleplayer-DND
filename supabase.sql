@@ -25,10 +25,15 @@ create table if not exists public.campaigns (
   messages jsonb not null default '[]'::jsonb,
   quests jsonb not null default '[]'::jsonb,
   bounties jsonb not null default '[]'::jsonb,
+  rumors jsonb not null default '[]'::jsonb,
   inventory jsonb not null default '[]'::jsonb,
   buffs jsonb not null default '[]'::jsonb,
   relationships jsonb not null default '[]'::jsonb,
   journal jsonb not null default '[]'::jsonb,
+  npcs jsonb not null default '[]'::jsonb,
+  ossuary jsonb not null default '[]'::jsonb,
+  spellbook jsonb not null default '[]'::jsonb,
+  access_key text not null default lpad((floor(random() * 1000000000))::text, 9, '0') unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -50,9 +55,26 @@ alter table public.campaigns add column if not exists buffs jsonb not null defau
 alter table public.campaigns add column if not exists messages jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists quests jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists bounties jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists rumors jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists inventory jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists relationships jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists journal jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists npcs jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists ossuary jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists spellbook jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists access_key text;
+
+update public.campaigns
+set access_key = lpad((floor(random() * 1000000000))::text, 9, '0')
+where access_key is null;
+
+alter table public.campaigns
+  alter column access_key set default lpad((floor(random() * 1000000000))::text, 9, '0');
+
+create unique index if not exists campaigns_access_key_idx on public.campaigns(access_key);
+
+alter table public.campaigns
+  alter column access_key set not null;
 
 create or replace function public.touch_updated_at()
 returns trigger as $$
