@@ -2386,7 +2386,7 @@ export default function Campaign() {
                 })}
               </div>
             </div>
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-4 min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {leftTab === 1 && (
                 <div className="grid gap-3">
                   <div className="flex flex-wrap gap-2">
@@ -2668,6 +2668,7 @@ export default function Campaign() {
                         const rightLabel = tiers[8] ?? tiers[tiers.length - 1] ?? REP_LABELS[rep]?.right ?? 'Positive';
                         const { label, tone } = getRepStatus(rep, safeValue);
                         const position = getRepPosition(safeValue);
+                        const knobPosition = Math.min(94, Math.max(6, position));
                         const fillLeft = safeValue >= 0 ? 50 : position;
                         const fillWidth = (Math.abs(safeValue) / 20) * 50;
                         const tickValues = [-15, -10, -5, 0, 5, 10, 15];
@@ -2681,8 +2682,8 @@ export default function Campaign() {
                                 : 'border-white/20 text-[var(--soft)]';
                         return (
                           <div key={rep} className="grid gap-2 rounded-[14px] border border-white/10 bg-white/5 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2 text-sm">
                                 <span className="rounded-full border border-[rgba(214,179,106,0.4)] p-1 text-[var(--accent)]">
                                   {REP_ICONS[rep]}
                                 </span>
@@ -2714,7 +2715,7 @@ export default function Campaign() {
                               ))}
                               <div
                                 className="absolute -top-2 h-6 w-6 -translate-x-1/2 rounded-full border border-white/20 bg-[rgba(15,17,22,0.95)] text-[var(--accent)] shadow-[0_0_0_4px_rgba(15,17,22,0.6)]"
-                                style={{ left: `${position}%` }}
+                                style={{ left: `${knobPosition}%` }}
                               >
                                 <div className="flex h-full w-full items-center justify-center text-[0.7rem]">
                                   {REP_ICONS[rep]}
