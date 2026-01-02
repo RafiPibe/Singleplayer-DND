@@ -32,6 +32,106 @@ const NPC_REP_MIN = -20;
 const NPC_REP_MAX = 20;
 const MAX_LEVEL = 30;
 
+const DEFAULT_ABILITIES = [
+  "Strength",
+  "Dexterity",
+  "Constitution",
+  "Intelligence",
+  "Wisdom",
+  "Charisma",
+];
+
+const DEFAULT_SKILLS_BY_ABILITY = {
+  Strength: ["Athletics"],
+  Dexterity: ["Acrobatics", "Sleight of Hand", "Stealth"],
+  Constitution: [],
+  Intelligence: ["Arcana", "History", "Investigation", "Nature", "Religion"],
+  Wisdom: ["Animal Handling", "Insight", "Medicine", "Perception", "Survival"],
+  Charisma: ["Deception", "Intimidation", "Performance", "Persuasion"],
+};
+
+const DEFAULT_LOOT_CONFIG = {
+  rarity_rolls: [
+    { rarity: "Common", min: 1, max: 500 },
+    { rarity: "Uncommon", min: 501, max: 800 },
+    { rarity: "Rare", min: 801, max: 940 },
+    { rarity: "Epic", min: 941, max: 990 },
+    { rarity: "Legendary", min: 991, max: 999 },
+    {
+      rarity: "Divine/Hellforged",
+      min: 1000,
+      max: 1000,
+      variants: ["Divine", "Hellforged"],
+    },
+  ],
+  kind_weights: {
+    potion: 40,
+    weapon: 30,
+    armor: 20,
+    item: 10,
+  },
+  equipment_scaling: {
+    Common: { weaponBonus: 0, dieBonus: "", acBonus: 0, doubleDie: false, extraDice: "" },
+    Uncommon: { weaponBonus: 1, dieBonus: "", acBonus: 0, doubleDie: false, extraDice: "" },
+    Rare: { weaponBonus: 1, dieBonus: "1d4", acBonus: 1, doubleDie: false, extraDice: "" },
+    Epic: { weaponBonus: 2, dieBonus: "1d8", acBonus: 2, doubleDie: false, extraDice: "" },
+    Legendary: { weaponBonus: 3, dieBonus: "", acBonus: 3, doubleDie: true, extraDice: "" },
+    Divine: { weaponBonus: 3, dieBonus: "", acBonus: 4, doubleDie: true, extraDice: "2d10" },
+    Hellforged: {
+      weaponBonus: 3,
+      dieBonus: "",
+      acBonus: 4,
+      doubleDie: true,
+      extraDice: "2d10",
+    },
+  },
+  potion_min_rarity: {
+    xp: "Epic",
+    health: "Common",
+    ability: "Uncommon",
+    skill: "Rare",
+  },
+  potion_potency: {
+    Common: { heal: "2d4+2" },
+    Uncommon: { heal: "4d4+4" },
+    Rare: { heal: "8d4+8", skillLevels: 1 },
+    Epic: { heal: "10d4+20", xp: 2, skillLevels: 2 },
+    Legendary: { heal: "Full", xp: 5, skillLevels: 5 },
+    Divine: { heal: "Full+25", xp: 10, skillLevels: 10, mastery: true },
+    Hellforged: { heal: "Full+25", xp: 10, skillLevels: 10, mastery: true },
+  },
+  ability_skill_potions: {
+    Uncommon: { abilityBonus: "+1d4", skillEffect: "", duration: "1 turn" },
+    Rare: { abilityBonus: "+1d6", skillEffect: "Advantage on skill", duration: "1 turn" },
+    Epic: { abilityBonus: "+1d8", skillEffect: "Advantage +1d4", duration: "2 turns" },
+    Legendary: { abilityBonus: "+1d10", skillEffect: "Advantage +1d8", duration: "4 turns" },
+    Divine: { abilityBonus: "+1d12", skillEffect: "Auto-success (1/turn)", duration: "Until DM says" },
+    Hellforged: { abilityBonus: "+1d12", skillEffect: "Auto-success (1/turn)", duration: "Until DM says" },
+  },
+};
+
+const DEFAULT_WEAPON_BASES = [
+  { name: "Steel Longsword", damage: "1d8", weaponType: "Melee" },
+  { name: "Iron Shortsword", damage: "1d6", weaponType: "Melee" },
+  { name: "Oak Longbow", damage: "1d8", weaponType: "Ranged" },
+  { name: "Ash Staff", damage: "1d6", weaponType: "Melee" },
+  { name: "Bronze Dagger", damage: "1d4", weaponType: "Melee" },
+];
+
+const DEFAULT_ARMOR_BASES = [
+  { name: "Leather Vest", slot: "Body", ac: 2 },
+  { name: "Iron Helm", slot: "Head", ac: 1 },
+  { name: "Chain Bracers", slot: "Arms", ac: 1 },
+  { name: "Reinforced Greaves", slot: "Leggings", ac: 1 },
+  { name: "Traveler Cloak", slot: "Cloak", ac: 1 },
+];
+
+const DEFAULT_ITEM_BASES = [
+  { name: "Ancient Bone Charm", description: "A faint hum lingers within the marrow." },
+  { name: "Runed Copper Ring", description: "Warm to the touch, etched with tiny sigils." },
+  { name: "Weathered Satchel", description: "Stitched leather with a forgotten crest." },
+];
+
 const stripHtml = (value: unknown) => {
   if (!value) return "";
   return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -45,6 +145,7 @@ const TOOL_LEAK_PATTERNS = [
   /\badd_npc\s*\(/i,
   /\bupdate_npc\s*\(/i,
   /\badd_ossuary_item\s*\(/i,
+  /\bgenerate_loot\s*\(/i,
   /\badd_quest\s*\(/i,
   /\bupdate_quest\s*\(/i,
   /\badd_bounty\s*\(/i,
@@ -148,6 +249,104 @@ const enforcePibeGender = (list: any[]) =>
     if (!isPibe(npc?.name)) return nextNpc;
     return { ...nextNpc, gender: "Male" };
   });
+
+const pickRandom = <T>(values: T[]) => values[Math.floor(Math.random() * values.length)];
+
+const normalizeRarityName = (value: unknown) => {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (!raw) return "";
+  if (raw.includes("hell")) return "Hellforged";
+  if (raw.includes("divine")) return "Divine";
+  if (raw.includes("legendary")) return "Legendary";
+  if (raw.includes("epic")) return "Epic";
+  if (raw.includes("rare")) return "Rare";
+  if (raw.includes("uncommon")) return "Uncommon";
+  if (raw.includes("common")) return "Common";
+  return "";
+};
+
+const resolveRarity = (value: unknown, config: any) => {
+  const normalized = normalizeRarityName(value);
+  if (normalized) return normalized;
+  const roll = Math.floor(Math.random() * 1000) + 1;
+  const ranges = Array.isArray(config?.rarity_rolls) ? config.rarity_rolls : DEFAULT_LOOT_CONFIG.rarity_rolls;
+  const match = ranges.find((range: any) => roll >= range.min && roll <= range.max);
+  if (match?.variants?.length) {
+    return pickRandom(match.variants);
+  }
+  return match?.rarity ?? "Common";
+};
+
+const resolveLootKind = (value: unknown, config: any) => {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw.includes("weapon")) return "weapon";
+  if (raw.includes("armor")) return "armor";
+  if (raw.includes("potion") || raw.includes("consumable")) return "potion";
+  if (raw.includes("item")) return "item";
+  const weights = config?.kind_weights ?? DEFAULT_LOOT_CONFIG.kind_weights;
+  const entries = Object.entries(weights).filter(([, weight]) => Number(weight) > 0);
+  if (!entries.length) return "item";
+  const total = entries.reduce((sum, [, weight]) => sum + Number(weight), 0);
+  let roll = Math.random() * total;
+  for (const [kind, weight] of entries) {
+    roll -= Number(weight);
+    if (roll <= 0) return String(kind);
+  }
+  return String(entries[0][0]);
+};
+
+const parseDice = (value: string) => {
+  const match = String(value ?? "").match(/^(\d+)d(\d+)$/i);
+  if (!match) return null;
+  return { count: Number(match[1]), sides: Number(match[2]) };
+};
+
+const rollDiceExpression = (value: string, hpMax: number) => {
+  const text = String(value ?? "").trim();
+  if (!text) return { total: 0, label: "" };
+  if (/^full\b/i.test(text)) {
+    const bonus = text.match(/\+(\d+)/);
+    const temp = bonus ? Number(bonus[1]) : 0;
+    return { total: hpMax, label: temp ? `Full + ${temp} Temp` : "Full" };
+  }
+  const match = text.match(/(\d+)d(\d+)(?:\s*\+\s*(\d+))?/i);
+  if (!match) return { total: 0, label: text };
+  const count = Number(match[1]);
+  const sides = Number(match[2]);
+  const bonus = match[3] ? Number(match[3]) : 0;
+  let total = bonus;
+  for (let index = 0; index < count; index += 1) {
+    total += Math.floor(Math.random() * sides) + 1;
+  }
+  const label = bonus ? `${count}d${sides}+${bonus}` : `${count}d${sides}`;
+  return { total, label };
+};
+
+const formatDamage = (base: string, bonus: number, dieBonus?: string, extraDice?: string) => {
+  const parts = [];
+  if (base) parts.push(base);
+  if (dieBonus) parts.push(dieBonus);
+  if (extraDice) parts.push(extraDice);
+  if (bonus) parts.push(String(bonus));
+  return parts.join("+");
+};
+
+const scaleWeaponDamage = (baseDamage: string, rarity: string, config: any) => {
+  const scaling = config?.equipment_scaling?.[rarity] ?? DEFAULT_LOOT_CONFIG.equipment_scaling[rarity] ?? {};
+  const parsed = parseDice(baseDamage);
+  if (!parsed) {
+    return { damage: baseDamage, bonus: scaling.weaponBonus ?? 0 };
+  }
+  const count = scaling.doubleDie ? parsed.count * 2 : parsed.count;
+  const base = `${count}d${parsed.sides}`;
+  const damage = formatDamage(base, scaling.weaponBonus ?? 0, scaling.dieBonus, scaling.extraDice);
+  return { damage, bonus: scaling.weaponBonus ?? 0 };
+};
+
+const scaleArmorAc = (baseAc: number, rarity: string, config: any) => {
+  const scaling = config?.equipment_scaling?.[rarity] ?? DEFAULT_LOOT_CONFIG.equipment_scaling[rarity] ?? {};
+  return Math.max(0, asNumber(baseAc) + (scaling.acBonus ?? 0));
+};
 
 const getLevelRequirement = (level: number) => {
   const value = Math.max(1, Math.floor(level));
@@ -256,6 +455,173 @@ const applyQuestRewards = (campaign: any) => {
   }
 
   return next;
+};
+
+const RARITY_ORDER = ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Divine", "Hellforged"];
+
+const isRarityAtLeast = (rarity: string, minimum: string) => {
+  const currentIndex = RARITY_ORDER.indexOf(rarity);
+  const minIndex = RARITY_ORDER.indexOf(minimum);
+  if (currentIndex === -1 || minIndex === -1) return false;
+  return currentIndex >= minIndex;
+};
+
+const selectPotionType = (rarity: string, config: any, requested?: string) => {
+  const minRarity = config?.potion_min_rarity ?? DEFAULT_LOOT_CONFIG.potion_min_rarity;
+  const options = [
+    { key: "health", min: minRarity.health ?? "Common" },
+    { key: "xp", min: minRarity.xp ?? "Epic" },
+    { key: "ability", min: minRarity.ability ?? "Uncommon" },
+    { key: "skill", min: minRarity.skill ?? "Rare" },
+  ].filter((entry) => isRarityAtLeast(rarity, entry.min));
+
+  if (requested) {
+    const normalized = String(requested).trim().toLowerCase();
+    const match = options.find((entry) => entry.key === normalized);
+    if (match) return match.key;
+  }
+
+  if (!options.length) return "health";
+  return pickRandom(options).key;
+};
+
+const buildPotion = (args: any, rarity: string, context: any) => {
+  const config = context.lootConfig ?? DEFAULT_LOOT_CONFIG;
+  const potionType = selectPotionType(rarity, config, args.potionType ?? args.effect ?? args.type);
+  const potency = config?.potion_potency?.[rarity] ?? DEFAULT_LOOT_CONFIG.potion_potency[rarity] ?? {};
+  const abilitySkill = config?.ability_skill_potions?.[rarity] ?? DEFAULT_LOOT_CONFIG.ability_skill_potions[rarity] ?? {};
+  const abilities = context.abilities ?? DEFAULT_ABILITIES;
+  const skills = context.skills ?? Object.values(DEFAULT_SKILLS_BY_ABILITY).flat();
+
+  const base = {
+    id: makeId("ossuary"),
+    type: "Consumable",
+    rarity,
+    description: args.description ?? "",
+  };
+
+  if (potionType === "health") {
+    const healRule = potency.heal ?? "2d4+2";
+    const roll = rollDiceExpression(String(healRule), context.hpMax ?? 20);
+    const note = String(healRule).toLowerCase().includes("full+25")
+      ? "Grants 25 temporary HP."
+      : "";
+    return {
+      ...base,
+      name: args.name ?? `${rarity} Healing Potion`,
+      effect: "Health",
+      potency: roll.label,
+      heal: roll.total,
+      note,
+    };
+  }
+
+  if (potionType === "xp") {
+    return {
+      ...base,
+      name: args.name ?? `${rarity} Elixir of Experience`,
+      effect: "Experience",
+      playerXp: potency.xp ?? 2,
+      note: potency.xp ? `Grants ${potency.xp} XP.` : "",
+    };
+  }
+
+  if (potionType === "ability") {
+    const ability = args.ability ?? pickRandom(abilities);
+    const bonus = abilitySkill.abilityBonus ?? "+1d4";
+    const duration = abilitySkill.duration ? `Duration: ${abilitySkill.duration}.` : "";
+    return {
+      ...base,
+      name: args.name ?? `${rarity} ${ability} Tonic`,
+      effect: ability,
+      ability,
+      rollBonus: `${bonus} ${ability} checks`,
+      note: duration,
+    };
+  }
+
+  const skill = args.skill ?? pickRandom(skills);
+  const bonus = abilitySkill.abilityBonus ?? "";
+  const skillEffect = abilitySkill.skillEffect ? `${abilitySkill.skillEffect}. ` : "";
+  const duration = abilitySkill.duration ? `Duration: ${abilitySkill.duration}.` : "";
+  const masteryNote = potency.mastery ? "Instant mastery." : "";
+  return {
+    ...base,
+    name: args.name ?? `${rarity} ${skill} Draught`,
+    effect: skill,
+    skill,
+    skillLevelBoost: potency.skillLevels ?? 1,
+    rollBonus: bonus ? `${bonus} ${skill} checks` : "",
+    note: `${skillEffect}${duration}${masteryNote}`.trim(),
+  };
+};
+
+const buildWeapon = (args: any, rarity: string, context: any) => {
+  const base = args.name ? { name: args.name, damage: args.damage, weaponType: args.weaponType } : pickRandom(DEFAULT_WEAPON_BASES);
+  const damageValue = args.damage ?? base.damage ?? "1d6";
+  const scaled = scaleWeaponDamage(damageValue, rarity, context.lootConfig);
+  return {
+    id: makeId("ossuary"),
+    type: "Weapon",
+    rarity,
+    name: args.name ?? base.name,
+    weaponType: args.weaponType ?? base.weaponType ?? "Melee",
+    damage: scaled.damage,
+    description: args.description ?? "",
+  };
+};
+
+const buildArmor = (args: any, rarity: string, context: any) => {
+  const base = args.name ? { name: args.name, slot: args.slot, ac: args.ac } : pickRandom(DEFAULT_ARMOR_BASES);
+  const baseAc = Number.isFinite(args.ac) ? args.ac : base.ac ?? 1;
+  return {
+    id: makeId("ossuary"),
+    type: "Armor",
+    rarity,
+    name: args.name ?? base.name,
+    slot: args.slot ?? base.slot ?? "Body",
+    ac: scaleArmorAc(baseAc, rarity, context.lootConfig),
+    description: args.description ?? "",
+  };
+};
+
+const buildItem = (args: any, rarity: string) => {
+  const base = args.name ? { name: args.name, description: args.description } : pickRandom(DEFAULT_ITEM_BASES);
+  return {
+    id: makeId("ossuary"),
+    type: "Item",
+    rarity,
+    name: args.name ?? base.name,
+    description: args.description ?? base.description ?? "",
+    note: args.note ?? "",
+  };
+};
+
+const buildLootItem = (args: any, context: any) => {
+  const rarity = resolveRarity(args.rarity, context.lootConfig);
+  const kind = resolveLootKind(args.kind ?? args.type, context.lootConfig);
+  if (kind === "weapon") return buildWeapon(args, rarity, context);
+  if (kind === "armor") return buildArmor(args, rarity, context);
+  if (kind === "potion") return buildPotion(args, rarity, context);
+  return buildItem(args, rarity);
+};
+
+const mergeLootItem = (generated: any, args: any) => {
+  const noteParts = [generated?.note, args?.note].filter(Boolean);
+  return {
+    ...generated,
+    ...args,
+    id: generated?.id ?? args?.id ?? makeId("ossuary"),
+    type: generated?.type ?? args?.type ?? "Item",
+    rarity: generated?.rarity ?? args?.rarity ?? "Common",
+    damage: generated?.damage ?? args?.damage,
+    ac: generated?.ac ?? args?.ac,
+    heal: generated?.heal ?? args?.heal,
+    playerXp: generated?.playerXp ?? args?.playerXp,
+    skillLevelBoost: generated?.skillLevelBoost ?? args?.skillLevelBoost,
+    rollBonus: generated?.rollBonus ?? args?.rollBonus,
+    note: noteParts.length ? noteParts.join(" ").trim() : "",
+  };
 };
 
 const tools = [
@@ -525,6 +891,31 @@ const tools = [
   {
     type: "function",
     function: {
+      name: "generate_loot",
+      description: "Generate a loot drop using rarity tables and add it to the ossuary.",
+      parameters: {
+        type: "object",
+        properties: {
+          kind: { type: "string" },
+          rarity: { type: "string" },
+          name: { type: "string" },
+          description: { type: "string" },
+          weaponType: { type: "string" },
+          damage: { type: "string" },
+          slot: { type: "string" },
+          ac: { type: "number" },
+          potionType: { type: "string" },
+          ability: { type: "string" },
+          skill: { type: "string" },
+          note: { type: "string" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "add_ossuary_item",
       description: "Add an ossuary item drop.",
       parameters: {
@@ -546,8 +937,10 @@ const tools = [
           abilityXp: { type: "number" },
           skill: { type: "string" },
           skillXp: { type: "number" },
+          skillLevelBoost: { type: "number" },
           playerXp: { type: "number" },
           note: { type: "string" },
+          rollBonus: { type: "string" },
         },
         required: ["name"],
       },
@@ -626,8 +1019,14 @@ const tools = [
   },
 ];
 
-const applyToolCalls = (campaign: any, toolCalls: any[]) => {
+const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
   let next = { ...campaign };
+  const lootContextSafe = {
+    lootConfig: lootContext?.lootConfig ?? DEFAULT_LOOT_CONFIG,
+    abilities: lootContext?.abilities ?? DEFAULT_ABILITIES,
+    skills: lootContext?.skills ?? Object.values(DEFAULT_SKILLS_BY_ABILITY).flat(),
+    hpMax: lootContext?.hpMax ?? asNumber(next.hp, 20),
+  };
 
   const handlers: Record<string, (args: any) => void> = {
     add_quest: (args) => {
@@ -816,28 +1215,37 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
       }
       next.npcs = updateListItem(npcs, { id: args.id, name: args.name }, patch);
     },
+    generate_loot: (args) => {
+      const ossuary = ensureArray(next.ossuary);
+      const generated = buildLootItem(args ?? {}, lootContextSafe);
+      ossuary.push(generated);
+      next.ossuary = ossuary;
+    },
     add_ossuary_item: (args) => {
       const ossuary = ensureArray(next.ossuary);
+      const generated = buildLootItem(args ?? {}, lootContextSafe);
+      const merged = mergeLootItem(generated, args ?? {});
       ossuary.push({
-        id: makeId("ossuary"),
-        name: args.name ?? "Unnamed Item",
-        type: args.type ?? "",
-        rarity: args.rarity ?? "",
-        description: args.description ?? "",
-        weaponType: args.weaponType ?? "",
-        damage: args.damage ?? "",
-        slot: args.slot ?? "",
-        ac: asNumber(args.ac),
-        effect: args.effect ?? "",
-        potency: args.potency ?? "",
-        heal: asNumber(args.heal),
-        ability: args.ability ?? "",
-        abilityScoreBoost: asNumber(args.abilityScoreBoost),
-        abilityXp: asNumber(args.abilityXp),
-        skill: args.skill ?? "",
-        skillXp: asNumber(args.skillXp),
-        playerXp: asNumber(args.playerXp),
-        note: args.note ?? "",
+        ...merged,
+        name: merged.name ?? "Unnamed Item",
+        weaponType: merged.weaponType ?? "",
+        damage: merged.damage ?? "",
+        slot: merged.slot ?? "",
+        ac: Number.isFinite(merged.ac) ? merged.ac : asNumber(merged.ac),
+        effect: merged.effect ?? "",
+        potency: merged.potency ?? "",
+        heal: Number.isFinite(merged.heal) ? merged.heal : asNumber(merged.heal),
+        ability: merged.ability ?? "",
+        abilityScoreBoost: Number.isFinite(merged.abilityScoreBoost)
+          ? merged.abilityScoreBoost
+          : asNumber(merged.abilityScoreBoost),
+        abilityXp: Number.isFinite(merged.abilityXp) ? merged.abilityXp : asNumber(merged.abilityXp),
+        skill: merged.skill ?? "",
+        skillXp: Number.isFinite(merged.skillXp) ? merged.skillXp : asNumber(merged.skillXp),
+        skillLevelBoost: Number.isFinite(merged.skillLevelBoost)
+          ? merged.skillLevelBoost
+          : asNumber(merged.skillLevelBoost),
+        playerXp: Number.isFinite(merged.playerXp) ? merged.playerXp : asNumber(merged.playerXp),
       });
       next.ossuary = ossuary;
     },
@@ -984,6 +1392,28 @@ const buildContext = (campaign: any) => {
   };
 };
 
+const loadGameData = async (supabase: any) => {
+  const { data } = await supabase
+    .from("game_data")
+    .select("key,value")
+    .in("key", ["loot_config", "abilities", "skills_by_ability"]);
+  const map: Record<string, any> = {};
+  (data ?? []).forEach((row: any) => {
+    map[row.key] = row.value;
+  });
+  const abilities = Array.isArray(map.abilities) ? map.abilities : DEFAULT_ABILITIES;
+  const skillsByAbility =
+    map.skills_by_ability && typeof map.skills_by_ability === "object"
+      ? map.skills_by_ability
+      : DEFAULT_SKILLS_BY_ABILITY;
+  const skills = Object.values(skillsByAbility).flat().filter(Boolean);
+  const lootConfig =
+    map.loot_config && typeof map.loot_config === "object"
+      ? map.loot_config
+      : DEFAULT_LOOT_CONFIG;
+  return { abilities, skillsByAbility, skills, lootConfig };
+};
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
@@ -1059,6 +1489,14 @@ serve(async (req) => {
       });
     }
 
+    const gameData = await loadGameData(supabase);
+    const lootContext = {
+      lootConfig: gameData.lootConfig,
+      abilities: gameData.abilities,
+      skills: gameData.skills,
+      hpMax: asNumber(campaign.hp, 20),
+    };
+
     const history = ensureArray(campaign.messages)
       .slice(-10)
       .map((entry: any) => ({
@@ -1084,7 +1522,7 @@ serve(async (req) => {
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
       "When the player attacks or uses a spell/weapon, instruct them to roll the correct dice based on equipped weapon damage (inventory.equipped.weapons) or spell roll, and mention any buff/potion modifiers from buffs. " +
       "If a buff grants a roll bonus (ex: +1d4), include it in the roll instruction. " +
-      "When loot appears, describe it in-world (no UI mentions) and call add_ossuary_item with the item details. " +
+      "When loot appears, describe it in-world (no UI mentions) and call generate_loot with the item type so it is added to the ossuary. " +
       "When adding NPCs, include their gender when known. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
@@ -1157,7 +1595,7 @@ serve(async (req) => {
     let updatedCampaign = { ...campaign };
 
     if (toolCalls.length) {
-      updatedCampaign = applyToolCalls(updatedCampaign, toolCalls);
+      updatedCampaign = applyToolCalls(updatedCampaign, toolCalls, lootContext);
 
       const functionResponses = toolCalls.map((call: any) => ({
         functionResponse: {
@@ -1256,7 +1694,7 @@ serve(async (req) => {
           .filter((call: any) => TOOL_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
 
         if (extractedCalls.length) {
-          updatedCampaign = applyToolCalls(updatedCampaign, extractedCalls);
+          updatedCampaign = applyToolCalls(updatedCampaign, extractedCalls, lootContext);
         }
       } else {
         const extractionError = await extractionResponse.text();

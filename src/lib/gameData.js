@@ -3,6 +3,7 @@ import { supabase } from './supabase.js';
 import { CLASSES, CUSTOM_CLASS, HP_RANGE, REPUTATION } from '../data/classes.js';
 import { ABILITIES, SKILLS, SKILLS_BY_ABILITY } from '../data/abilities.js';
 import { RACES } from '../data/races.js';
+import { LOOT_CONFIG } from '../data/loot.js';
 
 const FALLBACK = {
   abilities: ABILITIES,
@@ -10,6 +11,7 @@ const FALLBACK = {
   skills: SKILLS,
   races: RACES,
   classes: CLASSES,
+  loot_config: LOOT_CONFIG,
 };
 
 const coerceArray = (value, fallback) => (Array.isArray(value) ? value : fallback);
@@ -34,7 +36,7 @@ export const useGameData = () => {
       const { data: rows, error: fetchError } = await supabase
         .from('game_data')
       .select('key,value')
-      .in('key', ['classes', 'races', 'abilities', 'skills_by_ability']);
+      .in('key', ['classes', 'races', 'abilities', 'skills_by_ability', 'loot_config']);
 
       if (ignore) return;
 
@@ -73,6 +75,10 @@ export const useGameData = () => {
   }, [data.skills, skillsByAbility]);
   const races = useMemo(() => coerceArray(data.races, FALLBACK.races), [data.races]);
   const classes = useMemo(() => coerceArray(data.classes, FALLBACK.classes), [data.classes]);
+  const lootConfig = useMemo(
+    () => coerceObject(data.loot_config, FALLBACK.loot_config),
+    [data.loot_config]
+  );
   return {
     loading,
     error,
@@ -81,6 +87,7 @@ export const useGameData = () => {
     skillsByAbility,
     races,
     classes,
+    lootConfig,
     customClass: CUSTOM_CLASS,
     reputation: REPUTATION,
     hpRange: HP_RANGE,

@@ -83,6 +83,7 @@ const TOOL_LEAK_PATTERNS = [
   /\badd_npc\s*\(/i,
   /\bupdate_npc\s*\(/i,
   /\badd_ossuary_item\s*\(/i,
+  /\bgenerate_loot\s*\(/i,
   /\badd_quest\s*\(/i,
   /\bupdate_quest\s*\(/i,
   /\badd_bounty\s*\(/i,
@@ -293,7 +294,7 @@ const resolveRollContext = (text, abilities, skillsByAbility) => {
 const findBonusDice = (buffs) => {
   for (const buff of buffs ?? []) {
     const detail = buff?.detail ?? '';
-    if (!detail || !/roll/i.test(detail)) continue;
+    if (!detail) continue;
     const parsed = parseDiceFromText(detail);
     if (parsed) {
       return { ...parsed, label: `${parsed.count}d${parsed.sides}`, source: buff?.name ?? 'Buff' };
@@ -2155,8 +2156,17 @@ export default function Campaign() {
   const buffFromConsumable = (item, healAmount) => {
     const effect = item.effect ?? item.name ?? 'Potion';
     const potency = item.potency ? ` ${item.potency}` : '';
+    const rollBonus = item.rollBonus ?? item.roll_bonus ?? '';
     const abilityTarget = item.ability ?? (abilities.includes(item.effect) ? item.effect : null);
     const skillTarget = item.skill ?? (skills.includes(item.effect) ? item.effect : null);
+    if (rollBonus) {
+      const detail = `${rollBonus} on next roll`;
+      return {
+        id: `buff-${Date.now()}`,
+        name: abilityTarget ?? skillTarget ?? effect,
+        detail,
+      };
+    }
     if (abilityTarget) {
       const boost = item.abilityScoreBoost ?? item.abilityBoost;
       if (Number.isFinite(boost)) {
@@ -2343,6 +2353,11 @@ export default function Campaign() {
       : effect.toLowerCase().includes('experience')
         ? Number.parseInt(item.potency, 10) || 0
         : 0;
+    const skillLevelBoost = Number.isFinite(item.skillLevelBoost)
+      ? item.skillLevelBoost
+      : Number.isFinite(item.skillPointBoost)
+        ? item.skillPointBoost
+        : 0;
 
     let nextAbilityScores = abilityScoresByName;
     let nextAbilityProgress = abilityProgress;
@@ -2379,20 +2394,46 @@ export default function Campaign() {
       }
     }
 
-    if (skillTarget && skills.includes(skillTarget) && skillXp > 0) {
-      const currentLevel = skillLevelsByName?.[skillTarget] ?? 0;
-      const currentProgress = skillProgressByName?.[skillTarget] ?? 0;
-      const updated = applySkillProgress(currentLevel, currentProgress, skillXp);
-      nextSkillLevels = {
-        ...skillLevelsByName,
-        [skillTarget]: updated.level,
-      };
-      nextSkillProgress = {
-        ...skillProgressByName,
-        [skillTarget]: updated.progress,
-      };
-      if (updated.gainedPoints) {
-        nextSkillPoints += updated.gainedPoints;
+    if (skillTarget && skills.includes(skillTarget)) {
+      if (skillLevelBoost > 0) {
+        const currentLevel = skillLevelsByName?.[skillTarget] ?? 0;
+        let nextLevel = currentLevel;
+        let gainedPoints = 0;
+        let tier = Math.floor(nextLevel / 3);
+        for (let index = 0; index < skillLevelBoost; index += 1) {
+          nextLevel += 1;
+          const nextTier = Math.floor(nextLevel / 3);
+          if (nextTier > tier) {
+            gainedPoints += nextTier - tier;
+            tier = nextTier;
+          }
+        }
+        nextSkillLevels = {
+          ...skillLevelsByName,
+          [skillTarget]: nextLevel,
+        };
+        nextSkillProgress = {
+          ...skillProgressByName,
+          [skillTarget]: 0,
+        };
+        if (gainedPoints) {
+          nextSkillPoints += gainedPoints;
+        }
+      } else if (skillXp > 0) {
+        const currentLevel = skillLevelsByName?.[skillTarget] ?? 0;
+        const currentProgress = skillProgressByName?.[skillTarget] ?? 0;
+        const updated = applySkillProgress(currentLevel, currentProgress, skillXp);
+        nextSkillLevels = {
+          ...skillLevelsByName,
+          [skillTarget]: updated.level,
+        };
+        nextSkillProgress = {
+          ...skillProgressByName,
+          [skillTarget]: updated.progress,
+        };
+        if (updated.gainedPoints) {
+          nextSkillPoints += updated.gainedPoints;
+        }
       }
     }
 
