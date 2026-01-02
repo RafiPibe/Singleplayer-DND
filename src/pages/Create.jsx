@@ -803,10 +803,10 @@ export default function Create() {
                   </span>
                   <textarea
                     className="min-w-[min(520px,90vw)] resize-none border-0 bg-transparent px-0 py-3 text-center text-base text-[var(--ink)] focus:outline-none"
-                    rows={4}
+                    rows={7}
                     value={look}
                     onChange={(event) => setLook(event.target.value)}
-                    maxLength={200}
+                    maxLength={400}
                     required
                   />
                 </label>
