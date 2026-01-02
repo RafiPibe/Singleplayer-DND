@@ -21,6 +21,12 @@ const asNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const asOptionalNumber = (value) => {
+  if (value === '' || value === null || value === undefined) return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const safeParseJson = (value) => {
   try {
     return { ok: true, value: JSON.parse(value) };
@@ -28,6 +34,79 @@ const safeParseJson = (value) => {
     return { ok: false, error: error?.message ?? 'Invalid JSON' };
   }
 };
+
+const makeId = (prefix) =>
+  `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+
+const slugify = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/(^-|-$)/g, '');
+
+const EMPTY_EQUIPPED = {
+  weapons: [null, null],
+  armor: {
+    Head: null,
+    Body: null,
+    Arms: null,
+    Leggings: null,
+    Cloak: null,
+  },
+};
+
+const EMPTY_INVENTORY = {
+  summary: {
+    crowns: 0,
+    ac: 0,
+    damage: '',
+    weaponType: '',
+  },
+  equipped: EMPTY_EQUIPPED,
+  sections: {
+    weapons: [],
+    armor: [],
+    consumables: [],
+    misc: [],
+  },
+};
+
+const normalizeInventory = (inventory) => {
+  const base = inventory && !Array.isArray(inventory) ? inventory : EMPTY_INVENTORY;
+  return {
+    ...base,
+    summary: {
+      ...EMPTY_INVENTORY.summary,
+      ...(base.summary ?? {}),
+    },
+    equipped: {
+      weapons: Array.isArray(base?.equipped?.weapons)
+        ? [...base.equipped.weapons, null, null].slice(0, 2)
+        : [...EMPTY_EQUIPPED.weapons],
+      armor: {
+        ...EMPTY_EQUIPPED.armor,
+        ...(base?.equipped?.armor ?? {}),
+      },
+    },
+    sections: {
+      weapons: base?.sections?.weapons ?? [],
+      armor: base?.sections?.armor ?? [],
+      consumables: base?.sections?.consumables ?? [],
+      misc: base?.sections?.misc ?? [],
+    },
+  };
+};
+
+const normalizeSpellbook = (spellbook) => {
+  if (!Array.isArray(spellbook)) return [];
+  return spellbook.map((category) => ({
+    id: category?.id ?? '',
+    label: category?.label ?? '',
+    spells: Array.isArray(category?.spells) ? category.spells : [],
+  }));
+};
+
+const RARITY_ORDER = ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Divine', 'Hellforged'];
 
 const MapEditor = ({ label, keys, value, onChange, step = 1 }) => {
   const mapValue = value ?? {};
@@ -367,6 +446,927 @@ const RaceVariantsEditor = ({ variants, abilities, onChange }) => {
   );
 };
 
+const InventoryEditor = ({ value, onChange }) => {
+  const inventory = normalizeInventory(value);
+
+  const updateInventory = (patch) => {
+    onChange({ ...inventory, ...patch });
+  };
+
+  const updateSummary = (key, nextValue) => {
+    updateInventory({
+      summary: {
+        ...inventory.summary,
+        [key]: nextValue,
+      },
+    });
+  };
+
+  const updateEquippedWeapon = (slotIndex, patch) => {
+    const nextWeapons = [...inventory.equipped.weapons];
+    if (patch === null) {
+      nextWeapons[slotIndex] = null;
+    } else {
+      const existing = nextWeapons[slotIndex] ?? { id: makeId('weapon') };
+      nextWeapons[slotIndex] = { ...existing, ...patch };
+    }
+    updateInventory({
+      equipped: {
+        ...inventory.equipped,
+        weapons: nextWeapons,
+      },
+    });
+  };
+
+  const updateEquippedArmor = (slotKey, patch) => {
+    const nextArmor = { ...inventory.equipped.armor };
+    if (patch === null) {
+      nextArmor[slotKey] = null;
+    } else {
+      const existing = nextArmor[slotKey] ?? { id: makeId('armor'), slot: slotKey };
+      nextArmor[slotKey] = { ...existing, ...patch, slot: slotKey };
+    }
+    updateInventory({
+      equipped: {
+        ...inventory.equipped,
+        armor: nextArmor,
+      },
+    });
+  };
+
+  const updateSection = (section, nextItems) => {
+    updateInventory({
+      sections: {
+        ...inventory.sections,
+        [section]: nextItems,
+      },
+    });
+  };
+
+  const sectionFields = {
+    weapons: [
+      { key: 'name', label: 'Name' },
+      { key: 'rarity', label: 'Rarity' },
+      { key: 'weaponType', label: 'Weapon Type' },
+      { key: 'type', label: 'Type' },
+      { key: 'damage', label: 'Damage' },
+      { key: 'note', label: 'Note', multiline: true },
+    ],
+    armor: [
+      { key: 'name', label: 'Name' },
+      { key: 'rarity', label: 'Rarity' },
+      { key: 'slot', label: 'Slot' },
+      { key: 'ac', label: 'AC', type: 'number' },
+      { key: 'note', label: 'Note', multiline: true },
+    ],
+    consumables: [
+      { key: 'name', label: 'Name' },
+      { key: 'rarity', label: 'Rarity' },
+      { key: 'effect', label: 'Effect' },
+      { key: 'potency', label: 'Potency' },
+      { key: 'heal', label: 'Heal', type: 'number' },
+      { key: 'playerXp', label: 'XP', type: 'number' },
+      { key: 'ability', label: 'Ability' },
+      { key: 'skill', label: 'Skill' },
+      { key: 'skillXp', label: 'Skill XP', type: 'number' },
+      { key: 'skillLevelBoost', label: 'Skill Levels', type: 'number' },
+      { key: 'rollBonus', label: 'Roll Bonus' },
+      { key: 'note', label: 'Note', multiline: true },
+    ],
+    misc: [
+      { key: 'name', label: 'Name' },
+      { key: 'rarity', label: 'Rarity' },
+      { key: 'note', label: 'Note', multiline: true },
+    ],
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Summary
+        </div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="grid gap-1 text-xs">
+            <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Crowns</span>
+            <input
+              type="number"
+              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+              value={inventory.summary.crowns ?? 0}
+              onChange={(event) => updateSummary('crowns', asNumber(event.target.value))}
+            />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Base AC</span>
+            <input
+              type="number"
+              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+              value={inventory.summary.ac ?? 0}
+              onChange={(event) => updateSummary('ac', asNumber(event.target.value))}
+            />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Damage</span>
+            <input
+              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+              value={inventory.summary.damage ?? ''}
+              onChange={(event) => updateSummary('damage', event.target.value)}
+            />
+          </label>
+          <label className="grid gap-1 text-xs">
+            <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Weapon Type</span>
+            <input
+              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+              value={inventory.summary.weaponType ?? ''}
+              onChange={(event) => updateSummary('weaponType', event.target.value)}
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+            Equipped Weapons
+          </div>
+          <div className="mt-3 grid gap-3">
+            {inventory.equipped.weapons.map((weapon, index) => (
+              <div key={`weapon-slot-${index}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+                <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                  <span>Slot {index + 1}</span>
+                  {weapon ? (
+                    <button
+                      type="button"
+                      onClick={() => updateEquippedWeapon(index, null)}
+                      className="rounded-full border border-white/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:border-white/40"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Name</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={weapon?.name ?? ''}
+                      onChange={(event) => updateEquippedWeapon(index, { name: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Rarity</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={weapon?.rarity ?? ''}
+                      onChange={(event) => updateEquippedWeapon(index, { rarity: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Weapon Type</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={weapon?.weaponType ?? ''}
+                      onChange={(event) => updateEquippedWeapon(index, { weaponType: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Type</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={weapon?.type ?? ''}
+                      onChange={(event) => updateEquippedWeapon(index, { type: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs md:col-span-2">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Damage</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={weapon?.damage ?? ''}
+                      onChange={(event) => updateEquippedWeapon(index, { damage: event.target.value })}
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+            Equipped Armor
+          </div>
+          <div className="mt-3 grid gap-3">
+            {Object.entries(inventory.equipped.armor).map(([slotKey, item]) => (
+              <div key={`armor-slot-${slotKey}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+                <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                  <span>{slotKey}</span>
+                  {item ? (
+                    <button
+                      type="button"
+                      onClick={() => updateEquippedArmor(slotKey, null)}
+                      className="rounded-full border border-white/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:border-white/40"
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="grid gap-2 md:grid-cols-2">
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Name</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={item?.name ?? ''}
+                      onChange={(event) => updateEquippedArmor(slotKey, { name: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Rarity</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={item?.rarity ?? ''}
+                      onChange={(event) => updateEquippedArmor(slotKey, { rarity: event.target.value })}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs md:col-span-2">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">AC</span>
+                    <input
+                      type="number"
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={item?.ac ?? ''}
+                      onChange={(event) =>
+                        updateEquippedArmor(slotKey, { ac: asOptionalNumber(event.target.value) })
+                      }
+                    />
+                  </label>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4">
+        <ListEditor
+          label="Inventory Weapons"
+          items={inventory.sections.weapons}
+          onChange={(next) => updateSection('weapons', next)}
+          makeNew={() => ({
+            id: makeId('weapon'),
+            name: '',
+            rarity: 'Common',
+            weaponType: '',
+            type: 'Weapon',
+            damage: '',
+            note: '',
+          })}
+          fields={sectionFields.weapons}
+        />
+        <ListEditor
+          label="Inventory Armor"
+          items={inventory.sections.armor}
+          onChange={(next) => updateSection('armor', next)}
+          makeNew={() => ({
+            id: makeId('armor'),
+            name: '',
+            rarity: 'Common',
+            slot: 'Body',
+            ac: 0,
+            note: '',
+          })}
+          fields={sectionFields.armor}
+        />
+        <ListEditor
+          label="Consumables"
+          items={inventory.sections.consumables}
+          onChange={(next) => updateSection('consumables', next)}
+          makeNew={() => ({
+            id: makeId('consumable'),
+            name: '',
+            rarity: 'Common',
+            effect: '',
+            potency: '',
+            heal: 0,
+            playerXp: 0,
+            ability: '',
+            skill: '',
+            skillXp: 0,
+            skillLevelBoost: 0,
+            rollBonus: '',
+            note: '',
+          })}
+          fields={sectionFields.consumables}
+        />
+        <ListEditor
+          label="Misc Items"
+          items={inventory.sections.misc}
+          onChange={(next) => updateSection('misc', next)}
+          makeNew={() => ({
+            id: makeId('misc'),
+            name: '',
+            rarity: 'Common',
+            note: '',
+          })}
+          fields={sectionFields.misc}
+        />
+      </div>
+    </div>
+  );
+};
+
+const SpellbookEditor = ({ value, onChange }) => {
+  const categories = normalizeSpellbook(value);
+
+  const updateCategories = (next) => onChange(next);
+
+  const updateCategory = (index, patch) => {
+    const next = categories.map((category, categoryIndex) => {
+      if (categoryIndex !== index) return category;
+      const updated = { ...category, ...patch };
+      if (patch.label && (!category.id || category.id === slugify(category.label))) {
+        const nextId = slugify(patch.label);
+        if (nextId) updated.id = nextId;
+      }
+      return updated;
+    });
+    updateCategories(next);
+  };
+
+  const updateCategorySpells = (index, nextSpells) => {
+    updateCategories(
+      categories.map((category, categoryIndex) =>
+        categoryIndex === index ? { ...category, spells: nextSpells } : category
+      )
+    );
+  };
+
+  const addCategory = () => {
+    const label = 'New Category';
+    updateCategories([
+      ...categories,
+      {
+        id: slugify(label) || makeId('spell-category'),
+        label,
+        spells: [],
+      },
+    ]);
+  };
+
+  const removeCategory = (index) => {
+    updateCategories(categories.filter((_, categoryIndex) => categoryIndex !== index));
+  };
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Spellbook Categories
+        </div>
+        <button
+          type="button"
+          onClick={addCategory}
+          className="rounded-full border border-white/20 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+        >
+          Add
+        </button>
+      </div>
+      {categories.length === 0 ? (
+        <p className="m-0 text-xs text-[var(--soft)]">No spellbook categories yet.</p>
+      ) : null}
+      <div className="grid gap-3">
+        {categories.map((category, index) => (
+          <div key={category.id || `spell-category-${index}`} className="rounded-[14px] border border-white/10 bg-white/5 p-4">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                Category {index + 1}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeCategory(index)}
+                className="rounded-full border border-white/20 px-2.5 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:-translate-y-0.5 hover:border-white/40"
+              >
+                Remove
+              </button>
+            </div>
+            <div className="grid gap-2 md:grid-cols-2">
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Label</span>
+                <input
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={category.label ?? ''}
+                  onChange={(event) => updateCategory(index, { label: event.target.value })}
+                />
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">ID</span>
+                <input
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={category.id ?? ''}
+                  onChange={(event) => updateCategory(index, { id: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="mt-3">
+              <ListEditor
+                label="Spells"
+                items={category.spells}
+                onChange={(next) => updateCategorySpells(index, next)}
+                makeNew={() => ({
+                  id: makeId('spell'),
+                  name: '',
+                  roll: '',
+                  description: '',
+                  rank: 1,
+                })}
+                fields={[
+                  { key: 'name', label: 'Name' },
+                  { key: 'roll', label: 'Roll' },
+                  { key: 'rank', label: 'Rank', type: 'number' },
+                  { key: 'description', label: 'Description', multiline: true },
+                ]}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const LootConfigEditor = ({ value, onChange }) => {
+  const config = value ?? LOOT_CONFIG;
+  const rarityOptions = Array.from(
+    new Set([
+      ...RARITY_ORDER,
+      ...Object.keys(config.equipment_scaling ?? {}),
+      ...Object.values(config.potion_min_rarity ?? {}),
+    ].filter(Boolean))
+  );
+  const defaultRarity = rarityOptions[0] ?? '';
+
+  const updateConfig = (patch) => onChange({ ...config, ...patch });
+
+  const rarityRolls = Array.isArray(config.rarity_rolls) ? config.rarity_rolls : [];
+  const updateRarityRoll = (index, key, nextValue) => {
+    const next = rarityRolls.map((entry, entryIndex) => {
+      if (entryIndex !== index) return entry;
+      if (key === 'variants') {
+        const variants = String(nextValue)
+          .split(',')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        return { ...entry, variants: variants.length ? variants : undefined };
+      }
+      if (key === 'min' || key === 'max') {
+        return { ...entry, [key]: asNumber(nextValue) };
+      }
+      return { ...entry, [key]: nextValue };
+    });
+    updateConfig({ rarity_rolls: next });
+  };
+
+  const addRarityRoll = () => {
+    updateConfig({
+      rarity_rolls: [
+        ...rarityRolls,
+        { rarity: 'New', min: 1, max: 1 },
+      ],
+    });
+  };
+
+  const removeRarityRoll = (index) => {
+    updateConfig({
+      rarity_rolls: rarityRolls.filter((_, entryIndex) => entryIndex !== index),
+    });
+  };
+
+  const kindWeights = config.kind_weights ?? {};
+  const kindEntries = Object.entries(kindWeights);
+  const updateKindEntries = (nextEntries) => {
+    updateConfig({
+      kind_weights: nextEntries.reduce((acc, [key, weight]) => {
+        if (!key) return acc;
+        acc[key] = asNumber(weight);
+        return acc;
+      }, {}),
+    });
+  };
+
+  const updateKindEntry = (index, key, weight) => {
+    const nextEntries = kindEntries.map((entry, entryIndex) => {
+      if (entryIndex !== index) return entry;
+      return [key, weight];
+    });
+    updateKindEntries(nextEntries);
+  };
+
+  const addKindEntry = () => {
+    const key = `kind-${Date.now().toString(36)}`;
+    updateConfig({
+      kind_weights: {
+        ...kindWeights,
+        [key]: 0,
+      },
+    });
+  };
+
+  const removeKindEntry = (index) => {
+    const nextEntries = kindEntries.filter((_, entryIndex) => entryIndex !== index);
+    updateKindEntries(nextEntries);
+  };
+
+  const equipmentScaling = config.equipment_scaling ?? {};
+  const scalingEntries = Object.keys(equipmentScaling)
+    .sort((a, b) => {
+      const aIndex = RARITY_ORDER.indexOf(a);
+      const bIndex = RARITY_ORDER.indexOf(b);
+      if (aIndex === -1 && bIndex === -1) return a.localeCompare(b);
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    })
+    .map((key) => [key, equipmentScaling[key]]);
+
+  const updateScaling = (rarity, key, nextValue) => {
+    updateConfig({
+      equipment_scaling: {
+        ...equipmentScaling,
+        [rarity]: {
+          ...equipmentScaling[rarity],
+          [key]: nextValue,
+        },
+      },
+    });
+  };
+
+  const potionMinRarity = config.potion_min_rarity ?? {};
+  const updatePotionMin = (key, nextValue) => {
+    updateConfig({
+      potion_min_rarity: {
+        ...potionMinRarity,
+        [key]: nextValue,
+      },
+    });
+  };
+
+  const potionPotency = config.potion_potency ?? {};
+  const potencyEntries = Object.keys(potionPotency).length
+    ? Object.keys(potionPotency)
+    : rarityOptions;
+
+  const updatePotency = (rarity, key, nextValue) => {
+    updateConfig({
+      potion_potency: {
+        ...potionPotency,
+        [rarity]: {
+          ...potionPotency[rarity],
+          [key]: nextValue,
+        },
+      },
+    });
+  };
+
+  const abilitySkillPotions = config.ability_skill_potions ?? {};
+  const abilityEntries = Object.keys(abilitySkillPotions).length
+    ? Object.keys(abilitySkillPotions)
+    : rarityOptions;
+
+  const updateAbilityPotion = (rarity, key, nextValue) => {
+    updateConfig({
+      ability_skill_potions: {
+        ...abilitySkillPotions,
+        [rarity]: {
+          ...abilitySkillPotions[rarity],
+          [key]: nextValue,
+        },
+      },
+    });
+  };
+
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+            Rarity Roll Table
+          </div>
+          <button
+            type="button"
+            onClick={addRarityRoll}
+            className="rounded-full border border-white/20 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+          >
+            Add
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {rarityRolls.length === 0 ? (
+            <p className="m-0 text-xs text-[var(--soft)]">No rarity rules yet.</p>
+          ) : null}
+          {rarityRolls.map((entry, index) => (
+            <div key={`${entry.rarity}-${index}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                <span>Rule {index + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => removeRarityRoll(index)}
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:border-white/40"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-4">
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Rarity</span>
+                  <input
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={entry.rarity ?? ''}
+                    onChange={(event) => updateRarityRoll(index, 'rarity', event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Min</span>
+                  <input
+                    type="number"
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={entry.min ?? 0}
+                    onChange={(event) => updateRarityRoll(index, 'min', event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Max</span>
+                  <input
+                    type="number"
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={entry.max ?? 0}
+                    onChange={(event) => updateRarityRoll(index, 'max', event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Variants</span>
+                  <input
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={Array.isArray(entry.variants) ? entry.variants.join(', ') : ''}
+                    onChange={(event) => updateRarityRoll(index, 'variants', event.target.value)}
+                    placeholder="Divine, Hellforged"
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="flex items-center justify-between">
+          <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+            Drop Kind Weights
+          </div>
+          <button
+            type="button"
+            onClick={addKindEntry}
+            className="rounded-full border border-white/20 px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+          >
+            Add
+          </button>
+        </div>
+        <div className="mt-3 grid gap-2">
+          {kindEntries.length === 0 ? (
+            <p className="m-0 text-xs text-[var(--soft)]">No kind weights yet.</p>
+          ) : null}
+          {kindEntries.map(([key, weight], index) => (
+            <div key={`${key}-${index}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 flex items-center justify-between text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
+                <span>Entry {index + 1}</span>
+                <button
+                  type="button"
+                  onClick={() => removeKindEntry(index)}
+                  className="rounded-full border border-white/20 px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.16em] text-[var(--soft)] transition hover:border-white/40"
+                >
+                  Remove
+                </button>
+              </div>
+              <div className="grid gap-2 md:grid-cols-2">
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Kind</span>
+                  <input
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={key}
+                    onChange={(event) => updateKindEntry(index, event.target.value, weight)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Weight</span>
+                  <input
+                    type="number"
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={weight ?? 0}
+                    onChange={(event) => updateKindEntry(index, key, event.target.value)}
+                  />
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Equipment Scaling
+        </div>
+        <div className="mt-3 grid gap-2">
+          {scalingEntries.map(([rarity, scaling]) => (
+            <div key={rarity} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--soft)]">
+                {rarity}
+              </div>
+              <div className="grid gap-2 md:grid-cols-3">
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Weapon Bonus</span>
+                  <input
+                    type="number"
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={scaling?.weaponBonus ?? 0}
+                    onChange={(event) =>
+                      updateScaling(rarity, 'weaponBonus', asNumber(event.target.value))
+                    }
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Die Bonus</span>
+                  <input
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={scaling?.dieBonus ?? ''}
+                    onChange={(event) => updateScaling(rarity, 'dieBonus', event.target.value)}
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">AC Bonus</span>
+                  <input
+                    type="number"
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={scaling?.acBonus ?? 0}
+                    onChange={(event) =>
+                      updateScaling(rarity, 'acBonus', asNumber(event.target.value))
+                    }
+                  />
+                </label>
+                <label className="grid gap-1 text-xs">
+                  <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Extra Dice</span>
+                  <input
+                    className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={scaling?.extraDice ?? ''}
+                    onChange={(event) => updateScaling(rarity, 'extraDice', event.target.value)}
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-[var(--soft)]">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4"
+                    checked={Boolean(scaling?.doubleDie)}
+                    onChange={(event) => updateScaling(rarity, 'doubleDie', event.target.checked)}
+                  />
+                  Double Base Die
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Potion Minimum Rarity
+        </div>
+        <div className="mt-3 grid gap-2 md:grid-cols-2">
+          {[
+            { key: 'xp', label: 'XP Potion' },
+            { key: 'health', label: 'Health Potion' },
+            { key: 'ability', label: 'Ability Potion' },
+            { key: 'skill', label: 'Skill Potion' },
+          ].map((entry) => (
+            <label key={entry.key} className="grid gap-1 text-xs">
+              <span className="uppercase tracking-[0.16em] text-[var(--soft)]">{entry.label}</span>
+              <select
+                className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                value={potionMinRarity[entry.key] ?? defaultRarity}
+                onChange={(event) => updatePotionMin(entry.key, event.target.value)}
+              >
+                {rarityOptions.map((option) => (
+                  <option key={`${entry.key}-${option}`} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Potion Potency
+        </div>
+        <div className="mt-3 grid gap-2">
+          {potencyEntries.map((rarity) => {
+            const entry = potionPotency[rarity] ?? {};
+            return (
+              <div key={`potency-${rarity}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--soft)]">
+                  {rarity}
+                </div>
+                <div className="grid gap-2 md:grid-cols-4">
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Heal</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.heal ?? ''}
+                      onChange={(event) => updatePotency(rarity, 'heal', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">XP</span>
+                    <input
+                      type="number"
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.xp ?? ''}
+                      onChange={(event) =>
+                        updatePotency(rarity, 'xp', asOptionalNumber(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Skill Levels</span>
+                    <input
+                      type="number"
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.skillLevels ?? ''}
+                      onChange={(event) =>
+                        updatePotency(rarity, 'skillLevels', asOptionalNumber(event.target.value))
+                      }
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-[var(--soft)]">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4"
+                      checked={Boolean(entry.mastery)}
+                      onChange={(event) => updatePotency(rarity, 'mastery', event.target.checked)}
+                    />
+                    Instant Mastery
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="rounded-[16px] border border-white/10 bg-white/5 p-4">
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+          Ability & Skill Potions
+        </div>
+        <div className="mt-3 grid gap-2">
+          {abilityEntries.map((rarity) => {
+            const entry = abilitySkillPotions[rarity] ?? {};
+            return (
+              <div key={`ability-${rarity}`} className="rounded-[12px] border border-white/10 bg-black/20 p-3">
+                <div className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-[var(--soft)]">
+                  {rarity}
+                </div>
+                <div className="grid gap-2 md:grid-cols-3">
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Ability Bonus</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.abilityBonus ?? ''}
+                      onChange={(event) => updateAbilityPotion(rarity, 'abilityBonus', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Skill Effect</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.skillEffect ?? ''}
+                      onChange={(event) => updateAbilityPotion(rarity, 'skillEffect', event.target.value)}
+                    />
+                  </label>
+                  <label className="grid gap-1 text-xs">
+                    <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Duration</span>
+                    <input
+                      className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={entry.duration ?? ''}
+                      onChange={(event) => updateAbilityPotion(rarity, 'duration', event.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function Admin() {
   const { abilities, skills, skillsByAbility, classes, races, reputation, lootConfig } = useGameData();
   const [session, setSession] = useState(null);
@@ -386,7 +1386,7 @@ export default function Admin() {
   const [campaignDraft, setCampaignDraft] = useState(null);
   const [campaignIsNew, setCampaignIsNew] = useState(false);
   const [campaignSaving, setCampaignSaving] = useState(false);
-  const [jsonDrafts, setJsonDrafts] = useState({});
+  const [buffsJson, setBuffsJson] = useState('[]');
 
   const [abilitiesDraft, setAbilitiesDraft] = useState([]);
   const [skillsByAbilityDraft, setSkillsByAbilityDraft] = useState({});
@@ -395,8 +1395,6 @@ export default function Admin() {
   const [racesDraft, setRacesDraft] = useState([]);
   const [selectedRaceIndex, setSelectedRaceIndex] = useState(0);
   const [lootConfigDraft, setLootConfigDraft] = useState(LOOT_CONFIG);
-  const [lootConfigJson, setLootConfigJson] = useState(JSON.stringify(LOOT_CONFIG, null, 2));
-  const [lootConfigError, setLootConfigError] = useState('');
   const [gameDataError, setGameDataError] = useState('');
   const [gameDataSaving, setGameDataSaving] = useState(false);
 
@@ -435,7 +1433,7 @@ export default function Admin() {
       messages: [],
       quests: [],
       bounties: [],
-      inventory: [],
+      inventory: clone(EMPTY_INVENTORY),
       buffs: [],
       relationships: [],
       journal: [],
@@ -517,17 +1515,11 @@ export default function Admin() {
   useEffect(() => {
     const nextConfig = clone(lootConfig ?? LOOT_CONFIG);
     setLootConfigDraft(nextConfig);
-    setLootConfigJson(JSON.stringify(nextConfig, null, 2));
-    setLootConfigError('');
   }, [lootConfig]);
 
   useEffect(() => {
     if (!campaignDraft) return;
-    setJsonDrafts({
-      inventory: JSON.stringify(campaignDraft.inventory ?? [], null, 2),
-      buffs: JSON.stringify(campaignDraft.buffs ?? [], null, 2),
-      spellbook: JSON.stringify(campaignDraft.spellbook ?? [], null, 2),
-    });
+    setBuffsJson(JSON.stringify(campaignDraft.buffs ?? [], null, 2));
   }, [campaignDraft]);
 
   useEffect(() => {
@@ -555,7 +1547,12 @@ export default function Admin() {
   };
 
   const handleSelectCampaign = (campaign) => {
-    setCampaignDraft(clone(campaign));
+    const base = clone(campaign);
+    setCampaignDraft({
+      ...base,
+      inventory: normalizeInventory(base.inventory),
+      spellbook: normalizeSpellbook(base.spellbook ?? base.spells),
+    });
     setCampaignIsNew(false);
   };
 
@@ -577,32 +1574,21 @@ export default function Admin() {
     setCampaignSaving(true);
     setCampaignError('');
 
-    const inventoryParsed = safeParseJson(jsonDrafts.inventory ?? '[]');
-    if (!inventoryParsed.ok) {
-      setCampaignError(`Inventory JSON error: ${inventoryParsed.error}`);
-      setCampaignSaving(false);
-      return;
-    }
-
-    const buffsParsed = safeParseJson(jsonDrafts.buffs ?? '[]');
+    const buffsParsed = safeParseJson(buffsJson ?? '[]');
     if (!buffsParsed.ok) {
       setCampaignError(`Buffs JSON error: ${buffsParsed.error}`);
       setCampaignSaving(false);
       return;
     }
 
-    const spellbookParsed = safeParseJson(jsonDrafts.spellbook ?? '[]');
-    if (!spellbookParsed.ok) {
-      setCampaignError(`Spellbook JSON error: ${spellbookParsed.error}`);
-      setCampaignSaving(false);
-      return;
-    }
+    const normalizedInventory = normalizeInventory(campaignDraft.inventory);
+    const normalizedSpellbook = normalizeSpellbook(campaignDraft.spellbook ?? campaignDraft.spells);
 
     const payload = {
       ...campaignDraft,
-      inventory: inventoryParsed.value,
+      inventory: normalizedInventory,
       buffs: buffsParsed.value,
-      spellbook: spellbookParsed.value,
+      spellbook: normalizedSpellbook,
     };
 
     let result;
@@ -624,7 +1610,12 @@ export default function Admin() {
       return;
     }
 
-    setCampaignDraft(clone(result.data));
+    const saved = clone(result.data);
+    setCampaignDraft({
+      ...saved,
+      inventory: normalizeInventory(saved.inventory),
+      spellbook: normalizeSpellbook(saved.spellbook ?? saved.spells),
+    });
     setCampaignIsNew(false);
     await loadCampaigns();
     setCampaignSaving(false);
@@ -1253,29 +2244,21 @@ export default function Admin() {
 
                   <div className="grid gap-2">
                     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
-                      Inventory (JSON)
+                      Inventory
                     </div>
-                    <textarea
-                      rows={6}
-                      className="rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
-                      value={jsonDrafts.inventory ?? '[]'}
-                      onChange={(event) =>
-                        setJsonDrafts((prev) => ({ ...prev, inventory: event.target.value }))
-                      }
+                    <InventoryEditor
+                      value={campaignDraft.inventory}
+                      onChange={(next) => updateCampaignField('inventory', next)}
                     />
                   </div>
 
                   <div className="grid gap-2">
                     <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
-                      Spellbook (JSON)
+                      Spellbook
                     </div>
-                    <textarea
-                      rows={6}
-                      className="rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
-                      value={jsonDrafts.spellbook ?? '[]'}
-                      onChange={(event) =>
-                        setJsonDrafts((prev) => ({ ...prev, spellbook: event.target.value }))
-                      }
+                    <SpellbookEditor
+                      value={campaignDraft.spellbook}
+                      onChange={(next) => updateCampaignField('spellbook', next)}
                     />
                   </div>
 
@@ -1286,10 +2269,8 @@ export default function Admin() {
                     <textarea
                       rows={4}
                       className="rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
-                      value={jsonDrafts.buffs ?? '[]'}
-                      onChange={(event) =>
-                        setJsonDrafts((prev) => ({ ...prev, buffs: event.target.value }))
-                      }
+                      value={buffsJson}
+                      onChange={(event) => setBuffsJson(event.target.value)}
                     />
                   </div>
                 </div>
@@ -1738,30 +2719,14 @@ export default function Admin() {
               <button
                 type="button"
                 onClick={handleSaveLootConfig}
-                disabled={gameDataSaving || Boolean(lootConfigError)}
+                disabled={gameDataSaving}
                 className="rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#111] transition hover:-translate-y-0.5 disabled:opacity-60"
               >
                 {gameDataSaving ? 'Saving...' : 'Save Loot Config'}
               </button>
             </div>
             {gameDataError ? <p className="text-sm text-[var(--danger)]">{gameDataError}</p> : null}
-            {lootConfigError ? <p className="text-sm text-[var(--danger)]">{lootConfigError}</p> : null}
-            <textarea
-              rows={18}
-              className="w-full rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
-              value={lootConfigJson}
-              onChange={(event) => {
-                const next = event.target.value;
-                setLootConfigJson(next);
-                const parsed = safeParseJson(next);
-                if (!parsed.ok) {
-                  setLootConfigError(parsed.error);
-                  return;
-                }
-                setLootConfigError('');
-                setLootConfigDraft(parsed.value);
-              }}
-            />
+            <LootConfigEditor value={lootConfigDraft} onChange={setLootConfigDraft} />
           </section>
         )}
       </div>
