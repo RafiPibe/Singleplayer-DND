@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase.js';
 import { useGameData } from '../lib/gameData.js';
+import { LOOT_CONFIG } from '../data/loot.js';
 
 const clone = (value) => {
   if (value === null || value === undefined) return value;
@@ -367,7 +368,7 @@ const RaceVariantsEditor = ({ variants, abilities, onChange }) => {
 };
 
 export default function Admin() {
-  const { abilities, skills, skillsByAbility, classes, races, reputation } = useGameData();
+  const { abilities, skills, skillsByAbility, classes, races, reputation, lootConfig } = useGameData();
   const [session, setSession] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState('');
@@ -393,6 +394,9 @@ export default function Admin() {
   const [selectedClassIndex, setSelectedClassIndex] = useState(0);
   const [racesDraft, setRacesDraft] = useState([]);
   const [selectedRaceIndex, setSelectedRaceIndex] = useState(0);
+  const [lootConfigDraft, setLootConfigDraft] = useState(LOOT_CONFIG);
+  const [lootConfigJson, setLootConfigJson] = useState(JSON.stringify(LOOT_CONFIG, null, 2));
+  const [lootConfigError, setLootConfigError] = useState('');
   const [gameDataError, setGameDataError] = useState('');
   const [gameDataSaving, setGameDataSaving] = useState(false);
 
@@ -509,6 +513,13 @@ export default function Admin() {
     setRacesDraft(clone(races));
     setSelectedRaceIndex(0);
   }, [races]);
+
+  useEffect(() => {
+    const nextConfig = clone(lootConfig ?? LOOT_CONFIG);
+    setLootConfigDraft(nextConfig);
+    setLootConfigJson(JSON.stringify(nextConfig, null, 2));
+    setLootConfigError('');
+  }, [lootConfig]);
 
   useEffect(() => {
     if (!campaignDraft) return;
@@ -659,6 +670,8 @@ export default function Admin() {
   const handleSaveClasses = () => saveGameData('classes', classesDraft);
 
   const handleSaveRaces = () => saveGameData('races', racesDraft);
+
+  const handleSaveLootConfig = () => saveGameData('loot_config', lootConfigDraft);
 
   const handleSignIn = async (event) => {
     event.preventDefault();
@@ -840,6 +853,7 @@ export default function Admin() {
             { key: 'classes', label: 'Classes' },
             { key: 'abilities', label: 'Abilities & Skills' },
             { key: 'races', label: 'Races' },
+            { key: 'loot', label: 'Loot & Drops' },
           ].map((tab) => (
             <button
               key={tab.key}
@@ -1710,6 +1724,45 @@ export default function Admin() {
               )}
             </section>
           </div>
+        )}
+
+        {activeTab === 'loot' && (
+          <section className="rounded-[20px] border border-white/10 bg-white/5 p-6">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl">Loot & Drop Config</h2>
+                <p className="m-0 text-xs text-[var(--soft)]">
+                  Edit the rarity table, item scaling, and potion rules.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSaveLootConfig}
+                disabled={gameDataSaving || Boolean(lootConfigError)}
+                className="rounded-full bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#111] transition hover:-translate-y-0.5 disabled:opacity-60"
+              >
+                {gameDataSaving ? 'Saving...' : 'Save Loot Config'}
+              </button>
+            </div>
+            {gameDataError ? <p className="text-sm text-[var(--danger)]">{gameDataError}</p> : null}
+            {lootConfigError ? <p className="text-sm text-[var(--danger)]">{lootConfigError}</p> : null}
+            <textarea
+              rows={18}
+              className="w-full rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+              value={lootConfigJson}
+              onChange={(event) => {
+                const next = event.target.value;
+                setLootConfigJson(next);
+                const parsed = safeParseJson(next);
+                if (!parsed.ok) {
+                  setLootConfigError(parsed.error);
+                  return;
+                }
+                setLootConfigError('');
+                setLootConfigDraft(parsed.value);
+              }}
+            />
+          </section>
         )}
       </div>
     </div>

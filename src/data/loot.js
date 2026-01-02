@@ -1,0 +1,48 @@
+export const LOOT_CONFIG = {
+  rarity_rolls: [
+    { rarity: 'Common', min: 1, max: 500 },
+    { rarity: 'Uncommon', min: 501, max: 800 },
+    { rarity: 'Rare', min: 801, max: 940 },
+    { rarity: 'Epic', min: 941, max: 990 },
+    { rarity: 'Legendary', min: 991, max: 999 },
+    { rarity: 'Divine/Hellforged', min: 1000, max: 1000, variants: ['Divine', 'Hellforged'] },
+  ],
+  kind_weights: {
+    potion: 40,
+    weapon: 30,
+    armor: 20,
+    item: 10,
+  },
+  equipment_scaling: {
+    Common: { weaponBonus: 0, dieBonus: '', acBonus: 0, doubleDie: false, extraDice: '' },
+    Uncommon: { weaponBonus: 1, dieBonus: '', acBonus: 0, doubleDie: false, extraDice: '' },
+    Rare: { weaponBonus: 1, dieBonus: '1d4', acBonus: 1, doubleDie: false, extraDice: '' },
+    Epic: { weaponBonus: 2, dieBonus: '1d8', acBonus: 2, doubleDie: false, extraDice: '' },
+    Legendary: { weaponBonus: 3, dieBonus: '', acBonus: 3, doubleDie: true, extraDice: '' },
+    Divine: { weaponBonus: 3, dieBonus: '', acBonus: 4, doubleDie: true, extraDice: '2d10' },
+    Hellforged: { weaponBonus: 3, dieBonus: '', acBonus: 4, doubleDie: true, extraDice: '2d10' },
+  },
+  potion_min_rarity: {
+    xp: 'Epic',
+    health: 'Common',
+    ability: 'Uncommon',
+    skill: 'Rare',
+  },
+  potion_potency: {
+    Common: { heal: '2d4+2' },
+    Uncommon: { heal: '4d4+4' },
+    Rare: { heal: '8d4+8', skillLevels: 1 },
+    Epic: { heal: '10d4+20', xp: 2, skillLevels: 2 },
+    Legendary: { heal: 'Full', xp: 5, skillLevels: 5 },
+    Divine: { heal: 'Full+25', xp: 10, skillLevels: 10, mastery: true },
+    Hellforged: { heal: 'Full+25', xp: 10, skillLevels: 10, mastery: true },
+  },
+  ability_skill_potions: {
+    Uncommon: { abilityBonus: '+1d4', skillEffect: '', duration: '1 turn' },
+    Rare: { abilityBonus: '+1d6', skillEffect: 'Advantage on skill', duration: '1 turn' },
+    Epic: { abilityBonus: '+1d8', skillEffect: 'Advantage +1d4', duration: '2 turns' },
+    Legendary: { abilityBonus: '+1d10', skillEffect: 'Advantage +1d8', duration: '4 turns' },
+    Divine: { abilityBonus: '+1d12', skillEffect: 'Auto-success (1/turn)', duration: 'Until DM says' },
+    Hellforged: { abilityBonus: '+1d12', skillEffect: 'Auto-success (1/turn)', duration: 'Until DM says' },
+  },
+};
