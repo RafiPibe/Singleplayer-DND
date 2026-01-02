@@ -28,6 +28,8 @@ const QUEST_XP_DEFAULT = 15;
 const RUMOR_XP_DEFAULT = 5;
 const XP_MIN = 5;
 const XP_MAX = 50;
+const NPC_REP_MIN = -20;
+const NPC_REP_MAX = 20;
 const MAX_LEVEL = 30;
 
 const stripHtml = (value: unknown) => {
@@ -128,10 +130,23 @@ const updateListItem = <T extends { id?: string }>(
 const normalizeName = (value: unknown) => String(value ?? "").trim().toLowerCase();
 const isPibe = (value: unknown) => normalizeName(value) === "pibe";
 
+const clampNpcReputation = (value: unknown, fallback = 0) => {
+  const parsed = asNumber(value, fallback);
+  return clamp(parsed, NPC_REP_MIN, NPC_REP_MAX);
+};
+
 const enforcePibeGender = (list: any[]) =>
   list.map((npc: any) => {
-    if (!isPibe(npc?.name)) return npc;
-    return { ...npc, gender: "Male" };
+    if (!npc) return npc;
+    const repValue = npc?.reputation;
+    const nextNpc = {
+      ...npc,
+      reputation: Number.isFinite(Number(repValue))
+        ? clampNpcReputation(repValue, 0)
+        : repValue,
+    };
+    if (!isPibe(npc?.name)) return nextNpc;
+    return { ...nextNpc, gender: "Male" };
   });
 
 const getLevelRequirement = (level: number) => {
@@ -785,7 +800,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
         summary: args.summary ?? "",
         gender: isPibe(args.name) ? "Male" : args.gender ?? "",
         lastSeen: args.lastSeen ?? "",
-        reputation: asNumber(args.reputation),
+        reputation: clampNpcReputation(args.reputation, 0),
         feeling: args.feeling ?? "",
       });
       next.npcs = npcs;
@@ -793,6 +808,9 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     update_npc: (args) => {
       const npcs = ensureArray(next.npcs);
       const patch = { ...(args.patch ?? {}) };
+      if (patch.reputation !== undefined) {
+        patch.reputation = clampNpcReputation(patch.reputation, 0);
+      }
       if (isPibe(args.name)) {
         patch.gender = "Male";
       }
