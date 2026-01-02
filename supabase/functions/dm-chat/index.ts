@@ -24,6 +24,11 @@ const clamp = (value: number, min: number, max: number) => Math.min(max, Math.ma
 
 const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 
+const QUEST_XP_DEFAULT = 15;
+const RUMOR_XP_DEFAULT = 5;
+const XP_MIN = 5;
+const XP_MAX = 50;
+
 const stripHtml = (value: unknown) => {
   if (!value) return "";
   return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -502,18 +507,23 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
   const handlers: Record<string, (args: any) => void> = {
     add_quest: (args) => {
       const quests = ensureArray(next.quests);
+      const xpValue = clamp(asNumber(args.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
       quests.push({
         id: makeId("quest"),
         title: args.title ?? "Untitled Quest",
         description: args.description ?? "",
         status: args.status ?? "Active",
-        xp: asNumber(args.xp),
+        xp: xpValue,
       });
       next.quests = quests;
     },
     update_quest: (args) => {
       const quests = ensureArray(next.quests);
-      next.quests = updateListItem(quests, { id: args.id, title: args.title }, args.patch ?? {});
+      const patch = { ...(args.patch ?? {}) };
+      if (patch.xp !== undefined) {
+        patch.xp = clamp(asNumber(patch.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
+      }
+      next.quests = updateListItem(quests, { id: args.id, title: args.title }, patch);
     },
     add_bounty: (args) => {
       const bounties = ensureArray(next.bounties);
@@ -531,19 +541,24 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     },
     add_rumor: (args) => {
       const rumors = ensureArray(next.rumors);
+      const xpValue = clamp(asNumber(args.xp, RUMOR_XP_DEFAULT), XP_MIN, XP_MAX);
       rumors.push({
         id: makeId("rumor"),
         title: args.title ?? "Untitled Rumor",
         summary: args.summary ?? "",
         level: asNumber(args.level, 1),
-        xp: asNumber(args.xp),
+        xp: xpValue,
         notes: ensureArray(args.notes),
       });
       next.rumors = rumors;
     },
     update_rumor: (args) => {
       const rumors = ensureArray(next.rumors);
-      next.rumors = updateListItem(rumors, { id: args.id, title: args.title }, args.patch ?? {});
+      const patch = { ...(args.patch ?? {}) };
+      if (patch.xp !== undefined) {
+        patch.xp = clamp(asNumber(patch.xp, RUMOR_XP_DEFAULT), XP_MIN, XP_MAX);
+      }
+      next.rumors = updateListItem(rumors, { id: args.id, title: args.title }, patch);
     },
     update_reputation: (args) => {
       const rep = { ...ensureObject(next.reputation) } as Record<string, number>;
@@ -851,8 +866,12 @@ serve(async (req) => {
       "Never respond under 120 words unless the player explicitly requests brevity. " +
       "Include at least one spoken line in quotes when an NPC is present if possible and fit in the story. " +
       "Never show tool calls, function names, debug text, or code in the response. " +
+      "Do not mention UI or meta systems (quest log, rumor list, bounty board, XP totals, tool calls). " +
+      "When a new quest or rumor emerges, present it as an in-world request, lead, or notice without labeling it. " +
+      "Only mention XP or rewards if the player asks. " +
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
       "When adding NPCs, include their gender when known. " +
+      "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
       pibeLine +
       " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
 

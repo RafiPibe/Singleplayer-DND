@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -13,43 +13,9 @@ const isUuid = (value) =>
     value ?? ''
   );
 
-const sampleQuests = [
-  {
-    id: 'quest-1',
-    title: 'The Witch-Marked Creator',
-    status: 'Active',
-    xp: 50,
-    description: 'Track the artisan rumored to wield three schools of magic at once.',
-  },
-  {
-    id: 'quest-2',
-    title: 'River Crest Courier',
-    status: 'Rumor',
-    xp: 20,
-    description: 'Follow the courier trail to the docks before the storm hits.',
-  },
-];
-
-const sampleBounties = [
-  {
-    id: 'bounty-1',
-    title: 'Crimson Wraith',
-    reward: '120 gold',
-    status: 'Open',
-  },
-];
-
-const sampleRumors = [
-  {
-    id: 'rumor-1',
-    title: 'The Witch-Marked Creator',
-    level: 1,
-    xp: 50,
-    summary:
-      'Pibe mentions a creator whose gifts blur the lines between the three magical traditions.',
-    notes: ["Pibe, the tavern owner", 'Master Aldwin at the Scriptorium'],
-  },
-];
+const sampleQuests = [];
+const sampleBounties = [];
+const sampleRumors = [];
 
 const EMPTY_EQUIPPED = {
   weapons: [null, null],
@@ -1140,11 +1106,12 @@ export default function Campaign() {
   const [messageError, setMessageError] = useState('');
   const [messageSending, setMessageSending] = useState(false);
   const [introRequested, setIntroRequested] = useState(false);
+  const messageListRef = useRef(null);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
   const [inventoryTab, setInventoryTab] = useState('inventory');
-  const [rumors, setRumors] = useState(sampleRumors);
+  const [rumors, setRumors] = useState([]);
   const [journalEntries, setJournalEntries] = useState(() =>
     normalizeJournalEntries(sampleJournalEntries)
   );
@@ -1221,13 +1188,9 @@ export default function Campaign() {
     setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
     setSaveRolls(data.saving_throws ?? {});
     setMessages(Array.isArray(data.messages) ? data.messages : []);
-    setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
-    setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
-    if (Array.isArray(data.rumors) && data.rumors.length) {
-      setRumors(data.rumors);
-    } else {
-      setRumors(sampleRumors);
-    }
+    setQuestLog(Array.isArray(data.quests) ? data.quests : []);
+    setBounties(Array.isArray(data.bounties) ? data.bounties : []);
+    setRumors(Array.isArray(data.rumors) ? data.rumors : []);
     if (Array.isArray(data.journal) && data.journal.length) {
       setJournalEntries(normalizeJournalEntries(data.journal));
     } else {
@@ -1279,6 +1242,14 @@ export default function Campaign() {
   useEffect(() => {
     setIntroRequested(false);
   }, [campaign?.id]);
+
+  useEffect(() => {
+    if (!messageListRef.current) return;
+    messageListRef.current.scrollTo({
+      top: messageListRef.current.scrollHeight,
+      behavior: messages.length > 1 ? 'smooth' : 'auto',
+    });
+  }, [messages.length]);
 
   useEffect(() => {
     if (!campaign?.id || introRequested || !supabase) return;
@@ -3545,24 +3516,43 @@ export default function Campaign() {
             </div>
           </header>
 
-          <div className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl border border-white/10 bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          <div
+            ref={messageListRef}
+            className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
             {messages.length === 0 ? (
               <div className="grid gap-2 rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-[var(--soft)]">
                 <span className="font-semibold text-[var(--accent)]">Awaiting the Dungeon Master</span>
                 <span>The first scene is about to begin...</span>
               </div>
             ) : null}
-            {messages.map((message) => (
-              <div key={message.id} className="grid gap-2 rounded-2xl bg-white/5 p-4">
-                <div className="grid gap-1">
-                  <span className="font-bold tracking-[0.02em] text-[var(--accent)]">
-                    {message.sender}
-                  </span>
-                  <span className="text-sm text-[var(--soft)]">{message.location}</span>
+            {messages.map((message) => {
+              const isPlayer =
+                message.sender === campaign?.name ||
+                message.sender === 'You' ||
+                message.sender === (campaign?.name ?? '');
+              return (
+                <div key={message.id} className={`flex ${isPlayer ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`grid max-w-[min(620px,100%)] gap-2 rounded-2xl bg-[rgba(28,20,12,0.65)] p-4 ${
+                      isPlayer ? 'text-right' : 'text-left'
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center gap-3 text-sm ${
+                        isPlayer ? 'justify-end' : 'justify-between'
+                      }`}
+                    >
+                      <span className="font-bold tracking-[0.02em] text-[var(--accent)]">
+                        {message.sender}
+                      </span>
+                      <span className="text-sm text-[var(--soft)]">{message.location}</span>
+                    </div>
+                    <p className="m-0 whitespace-pre-wrap">{renderMessageContent(message.content)}</p>
+                  </div>
                 </div>
-                <p className="m-0 whitespace-pre-wrap">{renderMessageContent(message.content)}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           <form className="sticky bottom-4 z-10 grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(6,8,13,0.85)] p-3 shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur" onSubmit={handleSendMessage}>
