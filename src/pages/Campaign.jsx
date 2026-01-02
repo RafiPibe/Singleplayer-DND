@@ -111,6 +111,26 @@ const scrubToolLeaks = (value) => {
   return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 };
 
+const normalizeQuestStatus = (value) => String(value ?? '').trim().toLowerCase();
+const isQuestCompletedStatus = (value) => {
+  const status = normalizeQuestStatus(value);
+  return status === 'completed' || status === 'complete' || status === 'done' || status === 'resolved';
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const extractDmEntities = (text) => {
+  if (!text) return [];
+  const matches = [];
+  const regex = /<dm-entity>(.*?)<\/dm-entity>/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const entity = match[1]?.trim();
+    if (entity) matches.push(entity);
+  }
+  return matches;
+};
+
 const renderMessageContent = (content) => {
   if (!content) return null;
   const text = scrubToolLeaks(String(content));
@@ -135,6 +155,42 @@ const renderMessageContent = (content) => {
   if (!output.length) return text;
   if (lastIndex < text.length) {
     output.push(text.slice(lastIndex));
+  }
+  return output;
+};
+
+const renderPlayerMessageContent = (content, entities) => {
+  if (!content) return null;
+  const cleaned = scrubToolLeaks(String(content)).replace(/<\/?dm-entity>/gi, '');
+  if (!cleaned) return null;
+  const normalized = Array.from(
+    new Set((entities ?? []).map((item) => String(item ?? '').trim()).filter(Boolean))
+  );
+  if (!normalized.length) return cleaned;
+  const pattern = normalized
+    .sort((a, b) => b.length - a.length)
+    .map((item) => escapeRegExp(item))
+    .join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(cleaned)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(cleaned.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`player-entity-${match.index}`} className="dm-entity">
+        {match[0]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return cleaned;
+  if (lastIndex < cleaned.length) {
+    output.push(cleaned.slice(lastIndex));
   }
   return output;
 };
@@ -1110,6 +1166,7 @@ export default function Campaign() {
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
+  const [showCompletedQuests, setShowCompletedQuests] = useState(false);
   const [inventoryTab, setInventoryTab] = useState('inventory');
   const [rumors, setRumors] = useState([]);
   const [journalEntries, setJournalEntries] = useState(() =>
@@ -1332,6 +1389,29 @@ export default function Campaign() {
     }
     return [];
   }, [campaign]);
+  const activeQuests = useMemo(
+    () => questLog.filter((quest) => !isQuestCompletedStatus(quest?.status)),
+    [questLog]
+  );
+  const completedQuests = useMemo(
+    () => questLog.filter((quest) => isQuestCompletedStatus(quest?.status)),
+    [questLog]
+  );
+  const playerEntityHighlights = useMemo(() => {
+    const names = new Set();
+    npcList.forEach((npc) => {
+      const name = String(npc?.name ?? '').trim();
+      if (name) names.add(name);
+    });
+    messages.forEach((entry) => {
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) return;
+      extractDmEntities(entry?.content ?? '').forEach((entity) => names.add(entity));
+    });
+    return Array.from(names);
+  }, [messages, npcList, campaign]);
   const classKey = useMemo(() => {
     const raw = campaign?.class_name ?? '';
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
@@ -1540,7 +1620,7 @@ export default function Campaign() {
   }, [reputationByName]);
 
   const handleSendMessage = async (event) => {
-    event.preventDefault();
+    event?.preventDefault?.();
     const text = messageInput.trim();
     if (!text || !campaign) return;
     if (!supabase) {
@@ -2317,7 +2397,7 @@ export default function Campaign() {
                       const isActive = logTab === tab;
                       const label =
                         tab === 'quests'
-                          ? `Quest Log (${questLog.length})`
+                          ? `Quest Log (${activeQuests.length})`
                           : tab === 'bounties'
                             ? `Bounties (${bounties.length})`
                             : `Rumors (${rumors.length})`;
@@ -2339,10 +2419,10 @@ export default function Campaign() {
                   </div>
                   {logTab === 'quests' && (
                     <div className="grid gap-3">
-                      {questLog.length === 0 && (
+                      {activeQuests.length === 0 && (
                         <p className="m-0 text-sm text-[var(--soft)]">No active quests.</p>
                       )}
-                      {questLog.map((quest) => (
+                      {activeQuests.map((quest) => (
                         <div
                           key={quest.id}
                           className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
@@ -2376,6 +2456,71 @@ export default function Campaign() {
                           </details>
                         </div>
                       ))}
+                      <details
+                        className="group rounded-[14px] border border-white/10 bg-white/5 p-3"
+                        open={showCompletedQuests}
+                        onToggle={(event) => setShowCompletedQuests(event.currentTarget.open)}
+                      >
+                        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-[var(--soft)]">
+                              Completed ({completedQuests.length})
+                            </span>
+                            <span className="text-[var(--soft)] transition group-open:rotate-180">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                              >
+                                <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </span>
+                          </div>
+                        </summary>
+                        <div className="mt-3 grid gap-3">
+                          {completedQuests.length === 0 && (
+                            <p className="m-0 text-sm text-[var(--soft)]">No completed quests yet.</p>
+                          )}
+                          {completedQuests.map((quest) => (
+                            <div
+                              key={quest.id}
+                              className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                            >
+                              <details className="group" open>
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                                  <div className="grid gap-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-semibold">{quest.title}</span>
+                                      <span className="text-[var(--soft)] transition group-open:rotate-180">
+                                        <svg
+                                          viewBox="0 0 24 24"
+                                          className="h-4 w-4"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="1.6"
+                                        >
+                                          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                      </span>
+                                    </div>
+                                    <span className="inline-flex w-fit items-center rounded-full border border-white/20 px-2 py-0.5 text-xs font-semibold leading-none text-[var(--soft)]">
+                                      {quest.status}
+                                    </span>
+                                  </div>
+                                </summary>
+                                <div className="mt-2 grid gap-1.5">
+                                  <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
+                                  <span className="text-sm font-semibold text-[var(--accent)]">
+                                    {quest.xp} XP
+                                  </span>
+                                </div>
+                              </details>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   )}
                   {logTab === 'bounties' && (
@@ -3548,21 +3693,38 @@ export default function Campaign() {
                       </span>
                       <span className="text-sm text-[var(--soft)]">{message.location}</span>
                     </div>
-                    <p className="m-0 whitespace-pre-wrap">{renderMessageContent(message.content)}</p>
+                    <p className="m-0 whitespace-pre-wrap break-words">
+                      {isPlayer
+                        ? renderPlayerMessageContent(message.content, playerEntityHighlights)
+                        : renderMessageContent(message.content)}
+                    </p>
                   </div>
                 </div>
               );
             })}
           </div>
 
-          <form className="sticky bottom-4 z-10 grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(6,8,13,0.85)] p-3 shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur" onSubmit={handleSendMessage}>
-            <input
-              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
-              type="text"
+          <form
+            className="sticky bottom-4 z-10 grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(6,8,13,0.85)] p-3 shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur"
+            onSubmit={handleSendMessage}
+          >
+            <textarea
+              className="max-h-40 resize-none rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
+              rows={1}
               value={messageInput}
               onChange={(event) => {
                 setMessageInput(event.target.value);
                 if (messageError) setMessageError('');
+              }}
+              onInput={(event) => {
+                event.currentTarget.style.height = 'auto';
+                event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  handleSendMessage(event);
+                }
               }}
               placeholder="Describe your next move..."
               disabled={messageSending}

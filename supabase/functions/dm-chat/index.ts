@@ -28,6 +28,7 @@ const QUEST_XP_DEFAULT = 15;
 const RUMOR_XP_DEFAULT = 5;
 const XP_MIN = 5;
 const XP_MAX = 50;
+const MAX_LEVEL = 30;
 
 const stripHtml = (value: unknown) => {
   if (!value) return "";
@@ -132,6 +133,115 @@ const enforcePibeGender = (list: any[]) =>
     if (!isPibe(npc?.name)) return npc;
     return { ...npc, gender: "Male" };
   });
+
+const getLevelRequirement = (level: number) => {
+  const value = Math.max(1, Math.floor(level));
+  if (value >= MAX_LEVEL) return null;
+  if (value <= 1) return 2;
+  if (value <= 3) return 3;
+  if (value <= 5) return 4;
+  if (value <= 7) return 5;
+  if (value <= 9) return 6;
+  if (value <= 11) return 7;
+  if (value <= 13) return 8;
+  if (value <= 15) return 10;
+  if (value <= 17) return 12;
+  if (value <= 19) return 14;
+  if (value <= 21) return 18;
+  if (value <= 23) return 22;
+  if (value <= 25) return 28;
+  if (value <= 27) return 34;
+  if (value <= 29) return 42;
+  return 50;
+};
+
+const applyLevelProgress = (level: number, xp: number, amount: number) => {
+  const safeLevel = Math.max(1, Number.isFinite(level) ? level : 1);
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { level: safeLevel, xp: Math.max(0, xp ?? 0), gainedLevels: 0 };
+  }
+  let nextLevel = safeLevel;
+  let remaining = (xp ?? 0) + amount;
+  let required = getLevelRequirement(nextLevel);
+  let gainedLevels = 0;
+
+  while (required && remaining >= required && nextLevel < MAX_LEVEL) {
+    remaining -= required;
+    nextLevel += 1;
+    gainedLevels += 1;
+    required = getLevelRequirement(nextLevel);
+  }
+
+  return {
+    level: nextLevel,
+    xp: nextLevel >= MAX_LEVEL || !required ? 0 : Math.max(0, remaining),
+    gainedLevels,
+  };
+};
+
+const normalizeLevelProgress = (level: number, xp: number) => {
+  const safeLevel = Math.max(1, Number.isFinite(level) ? level : 1);
+  let nextLevel = safeLevel;
+  let remaining = Math.max(0, xp ?? 0);
+  let required = getLevelRequirement(nextLevel);
+  let gainedLevels = 0;
+
+  while (required && remaining >= required && nextLevel < MAX_LEVEL) {
+    remaining -= required;
+    nextLevel += 1;
+    gainedLevels += 1;
+    required = getLevelRequirement(nextLevel);
+  }
+
+  return {
+    level: nextLevel,
+    xp: nextLevel >= MAX_LEVEL || !required ? 0 : Math.max(0, remaining),
+    gainedLevels,
+  };
+};
+
+const normalizeQuestStatus = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const isQuestCompleted = (value: unknown) => {
+  const status = normalizeQuestStatus(value);
+  return status === "completed" || status === "complete" || status === "done" || status === "resolved";
+};
+
+const TOOL_EXTRACTION_ALLOWED = new Set([
+  "add_quest",
+  "update_quest",
+  "add_rumor",
+  "update_rumor",
+  "add_bounty",
+  "update_bounty",
+]);
+
+const applyQuestRewards = (campaign: any) => {
+  let next = { ...campaign };
+  let totalXp = 0;
+  const nextQuests = ensureArray(next.quests).map((quest: any) => {
+    if (!quest || quest.rewarded || !isQuestCompleted(quest.status)) return quest;
+    const xpValue = clamp(asNumber(quest.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
+    totalXp += xpValue;
+    return {
+      ...quest,
+      rewarded: true,
+      completed_at: quest.completed_at ?? new Date().toISOString(),
+    };
+  });
+  next.quests = nextQuests;
+
+  if (totalXp > 0) {
+    const currentLevel = Math.max(1, asNumber(next.level, 1));
+    const currentXp = Math.max(0, asNumber(next.level_xp));
+    const updated = applyLevelProgress(currentLevel, currentXp, totalXp);
+    next.level = updated.level;
+    next.level_xp = updated.xp;
+    const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
+    next.skill_points = currentSkillPoints + updated.gainedLevels;
+  }
+
+  return next;
+};
 
 const tools = [
   {
@@ -507,10 +617,15 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
   const handlers: Record<string, (args: any) => void> = {
     add_quest: (args) => {
       const quests = ensureArray(next.quests);
+      const title = String(args.title ?? "Untitled Quest").trim();
+      if (title) {
+        const exists = quests.some((quest: any) => normalizeName(quest?.title) === normalizeName(title));
+        if (exists) return;
+      }
       const xpValue = clamp(asNumber(args.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
       quests.push({
         id: makeId("quest"),
-        title: args.title ?? "Untitled Quest",
+        title: title || "Untitled Quest",
         description: args.description ?? "",
         status: args.status ?? "Active",
         xp: xpValue,
@@ -523,7 +638,44 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
       if (patch.xp !== undefined) {
         patch.xp = clamp(asNumber(patch.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
       }
-      next.quests = updateListItem(quests, { id: args.id, title: args.title }, patch);
+      const matchById = args.id;
+      const matchByTitle = args.title;
+      let awardXp = 0;
+      let shouldAward = false;
+
+      const nextQuests = quests.map((quest: any) => {
+        const isMatch =
+          (matchById && quest.id === matchById) ||
+          (matchByTitle && quest.title === matchByTitle);
+        if (!isMatch) return quest;
+        const prevStatus = quest.status;
+        const nextStatus = patch.status ?? quest.status;
+        const alreadyRewarded = Boolean(quest.rewarded);
+        const xpValue =
+          patch.xp !== undefined
+            ? patch.xp
+            : clamp(asNumber(quest.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
+        const updated = { ...quest, ...patch };
+        if (!alreadyRewarded && !isQuestCompleted(prevStatus) && isQuestCompleted(nextStatus)) {
+          awardXp = xpValue;
+          shouldAward = true;
+          updated.rewarded = true;
+          updated.completed_at = new Date().toISOString();
+        }
+        return updated;
+      });
+
+      next.quests = nextQuests;
+
+      if (shouldAward && awardXp > 0) {
+        const currentLevel = Math.max(1, asNumber(next.level, 1));
+        const currentXp = Math.max(0, asNumber(next.level_xp));
+        const updated = applyLevelProgress(currentLevel, currentXp, awardXp);
+        next.level = updated.level;
+        next.level_xp = updated.xp;
+        const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
+        next.skill_points = currentSkillPoints + updated.gainedLevels;
+      }
     },
     add_bounty: (args) => {
       const bounties = ensureArray(next.bounties);
@@ -541,10 +693,15 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     },
     add_rumor: (args) => {
       const rumors = ensureArray(next.rumors);
+      const title = String(args.title ?? "Untitled Rumor").trim();
+      if (title) {
+        const exists = rumors.some((rumor: any) => normalizeName(rumor?.title) === normalizeName(title));
+        if (exists) return;
+      }
       const xpValue = clamp(asNumber(args.xp, RUMOR_XP_DEFAULT), XP_MIN, XP_MAX);
       rumors.push({
         id: makeId("rumor"),
-        title: args.title ?? "Untitled Rumor",
+        title: title || "Untitled Rumor",
         summary: args.summary ?? "",
         level: asNumber(args.level, 1),
         xp: xpValue,
@@ -581,9 +738,21 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
       next.reputation = rep;
     },
     adjust_xp: (args) => {
-      const current = asNumber(next.level_xp);
+      const currentLevel = Math.max(1, asNumber(next.level, 1));
+      const currentXp = Math.max(0, asNumber(next.level_xp));
       const setValue = Number.isFinite(args.set) ? Number(args.set) : null;
-      next.level_xp = setValue === null ? current + asNumber(args.amount) : setValue;
+      const targetXp = setValue === null ? currentXp + asNumber(args.amount) : setValue;
+      const diff = targetXp - currentXp;
+      if (diff > 0) {
+        const updated = applyLevelProgress(currentLevel, currentXp, diff);
+        next.level = updated.level;
+        next.level_xp = updated.xp;
+        const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
+        next.skill_points = currentSkillPoints + updated.gainedLevels;
+      } else {
+        next.level = currentLevel;
+        next.level_xp = Math.max(0, targetXp);
+      }
     },
     adjust_hp: (args) => {
       const current = asNumber(next.hp_current);
@@ -871,6 +1040,9 @@ serve(async (req) => {
       "Only mention XP or rewards if the player asks. " +
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
       "When adding NPCs, include their gender when known. " +
+      "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
+      "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
+      "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
       "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
       pibeLine +
       " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
@@ -973,6 +1145,89 @@ serve(async (req) => {
           .map((part: any) => part.text)
           .join("");
         dmText = followupText || dmText;
+      }
+    }
+
+    const needsQuestExtraction = !toolCalls.length || !toolCalls.some((call: any) => {
+      const name = String(call?.name ?? "");
+      return TOOL_EXTRACTION_ALLOWED.has(name);
+    });
+
+    if (needsQuestExtraction && dmText) {
+      const questTitles = ensureArray(updatedCampaign.quests)
+        .map((quest: any) => quest?.title)
+        .filter(Boolean)
+        .join(" | ");
+      const rumorTitles = ensureArray(updatedCampaign.rumors)
+        .map((rumor: any) => rumor?.title)
+        .filter(Boolean)
+        .join(" | ");
+      const bountyTitles = ensureArray(updatedCampaign.bounties)
+        .map((bounty: any) => bounty?.title)
+        .filter(Boolean)
+        .join(" | ");
+
+      const extractionInstruction =
+        "You are a tool-routing assistant. Use function calls ONLY when needed to keep quests, rumors, and bounties in sync. " +
+        "Create a rumor when NPCs share hearsay, reports, or local talk. " +
+        "Create a quest when an NPC asks for help, the player accepts a task, or an objective is clearly offered. " +
+        "Update a quest to Completed only when the player clearly finishes it. " +
+        "Avoid duplicates by matching existing titles. If nothing should change, make no function calls.";
+
+      const extractionPrompt =
+        `Player message: ${message || "(none)"}\n` +
+        `DM message: ${dmText}\n` +
+        `Existing quests: ${questTitles || "none"}\n` +
+        `Existing rumors: ${rumorTitles || "none"}\n` +
+        `Existing bounties: ${bountyTitles || "none"}`;
+
+      const extractionResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: extractionPrompt }] }],
+            tools: [{ function_declarations: functionDeclarations }],
+            system_instruction: { parts: [{ text: extractionInstruction }] },
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      );
+
+      if (extractionResponse.ok) {
+        const extractionData = await extractionResponse.json();
+        const extractionCandidate = extractionData?.candidates?.[0]?.content ?? {};
+        const extractionParts = Array.isArray(extractionCandidate.parts) ? extractionCandidate.parts : [];
+        const extractedCalls = extractionParts
+          .filter((part: any) => part.functionCall)
+          .map((part: any) => ({
+            name: part.functionCall.name,
+            args: part.functionCall.args ?? {},
+          }))
+          .filter((call: any) => TOOL_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
+
+        if (extractedCalls.length) {
+          updatedCampaign = applyToolCalls(updatedCampaign, extractedCalls);
+        }
+      } else {
+        const extractionError = await extractionResponse.text();
+        console.warn("dm-chat extraction error", extractionError);
+      }
+    }
+
+    updatedCampaign = applyQuestRewards(updatedCampaign);
+    {
+      const currentLevel = Math.max(1, asNumber(updatedCampaign.level, 1));
+      const currentXp = Math.max(0, asNumber(updatedCampaign.level_xp));
+      const normalized = normalizeLevelProgress(currentLevel, currentXp);
+      updatedCampaign.level = normalized.level;
+      updatedCampaign.level_xp = normalized.xp;
+      if (normalized.gainedLevels > 0) {
+        const currentSkillPoints = Math.max(0, asNumber(updatedCampaign.skill_points));
+        updatedCampaign.skill_points = currentSkillPoints + normalized.gainedLevels;
       }
     }
 
