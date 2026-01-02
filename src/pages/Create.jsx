@@ -4,6 +4,7 @@ import { STANDARD_ARRAY, getAbilityModifier, getSaveModifier } from '../data/abi
 import { supabase } from '../lib/supabase.js';
 import { getValueStyle } from '../lib/valueStyle.js';
 import { useGameData } from '../lib/gameData.js';
+import { buildStartingInventory, buildStartingSpellbook } from '../data/startingLoadouts.js';
 
 const TOTAL_STEPS = 6;
 const rollDie = (sides) => Math.floor(Math.random() * sides) + 1;
@@ -128,6 +129,11 @@ export default function Create() {
     const role = cls.role ?? 'Class';
     return `${nickname} (${role})`;
   };
+
+  const getClassKey = (value) =>
+    String(value ?? '')
+      .replace(/\s*\(.+\)\s*$/, '')
+      .trim();
 
   const rollRepValue = () => rollDie(6) - rollDie(6);
   const rollSaveValue = () => rollInRange(1, 20);
@@ -554,6 +560,9 @@ export default function Create() {
       skillProgress[skill] = 0;
     });
 
+    const classKey = getClassKey(currentClassDetails.name ?? currentClassDetails.displayName ?? '');
+    const inventory = buildStartingInventory(classKey);
+    const spellbook = buildStartingSpellbook();
     const payload = {
       name: name.trim(),
       race: raceValue,
@@ -577,12 +586,18 @@ export default function Create() {
       hp: currentClassDetails.hp,
       hp_current: currentClassDetails.hp,
       backstory: backstory.trim(),
+      quests: [],
+      bounties: [],
+      rumors: [],
+      inventory,
+      spellbook,
+      messages: [],
     };
 
     const { data, error: insertError } = await supabase
       .from('campaigns')
       .insert(payload)
-      .select('id')
+      .select('id, access_key')
       .single();
 
     if (insertError) {
@@ -591,7 +606,8 @@ export default function Create() {
       return;
     }
 
-    navigate(`/campaign/${data.id}`);
+    const campaignKey = data.access_key || data.id;
+    navigate(`/campaign/${campaignKey}`);
   };
 
   const handleKeyDown = (event) => {

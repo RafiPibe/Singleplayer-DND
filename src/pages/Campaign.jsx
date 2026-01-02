@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import ReactQuill from 'react-quill';
 import 'react-quill/dist/quill.snow.css';
@@ -7,128 +7,15 @@ import { getValueStyle } from '../lib/valueStyle.js';
 import { getAbilityModifier, getAbilityRequirement, getSaveModifier } from '../data/abilities.js';
 import { useGameData } from '../lib/gameData.js';
 
-const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
+const SAMPLE_LOCATION = "Pibe's Tavern | Common room | Night";
+const isUuid = (value) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value ?? ''
+  );
 
-const sampleMessages = (characterName) => [
-  {
-    id: 'dm-1',
-    sender: 'Dungeon Master',
-    location: SAMPLE_LOCATION,
-    content:
-      "The firelight dances across the table as the tavern hushes. A courier slides a sealed letter toward you, its wax stamped with a river crest.",
-  },
-  {
-    id: 'dm-2',
-    sender: 'Dungeon Master',
-    location: SAMPLE_LOCATION,
-    content:
-      "Outside, thunder mutters over the city. The letter promises gold, answers, and a name you've never heard spoken aloud.",
-  },
-  {
-    id: 'player-1',
-    sender: characterName || 'You',
-    location: SAMPLE_LOCATION,
-    content: 'I break the seal and read it carefully, watching the room for anyone who flinches.',
-  },
-];
-
-const sampleQuests = [
-  {
-    id: 'quest-1',
-    title: 'The Witch-Marked Creator',
-    status: 'Active',
-    xp: 50,
-    description: 'Track the artisan rumored to wield three schools of magic at once.',
-  },
-  {
-    id: 'quest-2',
-    title: 'River Crest Courier',
-    status: 'Rumor',
-    xp: 20,
-    description: 'Follow the courier trail to the docks before the storm hits.',
-  },
-];
-
-const sampleBounties = [
-  {
-    id: 'bounty-1',
-    title: 'Crimson Wraith',
-    reward: '120 gold',
-    status: 'Open',
-  },
-];
-
-const sampleRumors = [
-  {
-    id: 'rumor-1',
-    title: 'The Witch-Marked Creator',
-    level: 1,
-    xp: 50,
-    summary:
-      'Old Greg mentions a creator whose gifts blur the lines between the three magical traditions.',
-    notes: ['Old Greg, the innkeeper', 'Master Aldwin at the Scriptorium'],
-  },
-];
-
-const sampleInventoryData = {
-  summary: {
-    crowns: 15,
-    ac: 4,
-    damage: '1d6',
-    weaponType: 'One-Handed +2',
-  },
-  equipped: {
-    weapons: [
-      { name: 'Sprouting Dagger', type: 'Melee (One-Handed)', damage: '1d6', rarity: 'Common' },
-      null,
-    ],
-    armor: {
-      Head: null,
-      Body: { name: 'Verdant Tunic', ac: 3, rarity: 'Uncommon' },
-      Arms: null,
-      Leggings: { name: 'Twig Leggings', ac: 1, rarity: 'Common' },
-      Cloak: null,
-    },
-  },
-  sections: {
-    weapons: [
-      {
-        id: 'wpn-1',
-        name: 'Sprouting Dagger',
-        rarity: 'Common',
-        weaponType: 'Melee (One-Handed)',
-        damage: '1d6',
-      },
-      {
-        id: 'wpn-2',
-        name: 'Gravebound Greatsword',
-        rarity: 'Rare',
-        weaponType: 'Melee (Two-Handed)',
-        damage: '1d12',
-      },
-    ],
-    armor: [
-      { id: 'arm-1', name: 'Verdant Tunic', rarity: 'Uncommon', slot: 'Chest', ac: 3 },
-      { id: 'arm-2', name: 'Twig Leggings', rarity: 'Common', slot: 'Legs', ac: 1 },
-    ],
-    consumables: [
-      { id: 'con-1', name: 'Pale Verdant Draught', rarity: 'Common', effect: 'Health', potency: '5 HP', heal: 5 },
-      { id: 'con-2', name: 'Pale Wraith Essence', rarity: 'Uncommon', effect: 'Soul', potency: '+1d4' },
-      {
-        id: 'con-3',
-        name: 'Tonic of Insight',
-        rarity: 'Uncommon',
-        effect: 'Investigation',
-        potency: '2 XP',
-        skill: 'Investigation',
-        skillXp: 2,
-      },
-    ],
-    misc: [
-      { id: 'misc-1', name: 'Tavern Crest Token', rarity: 'Common', note: 'Quest item' },
-    ],
-  },
-};
+const sampleQuests = [];
+const sampleBounties = [];
+const sampleRumors = [];
 
 const EMPTY_EQUIPPED = {
   weapons: [null, null],
@@ -141,12 +28,28 @@ const EMPTY_EQUIPPED = {
   },
 };
 
+const EMPTY_INVENTORY = {
+  summary: {
+    crowns: 0,
+    ac: 0,
+    damage: '',
+    weaponType: '',
+  },
+  equipped: EMPTY_EQUIPPED,
+  sections: {
+    weapons: [],
+    armor: [],
+    consumables: [],
+    misc: [],
+  },
+};
+
 const normalizeInventory = (inventory) => {
-  const base = inventory && !Array.isArray(inventory) ? inventory : sampleInventoryData;
+  const base = inventory && !Array.isArray(inventory) ? inventory : EMPTY_INVENTORY;
   return {
     ...base,
     summary: {
-      ...sampleInventoryData.summary,
+      ...EMPTY_INVENTORY.summary,
       ...(base.summary ?? {}),
     },
     equipped: {
@@ -170,6 +73,126 @@ const normalizeInventory = (inventory) => {
 const stripHtml = (value) => {
   if (!value) return '';
   return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+};
+
+const TOOL_LEAK_PATTERNS = [
+  /\bdefault_api\b/i,
+  /\bfunction_call\b/i,
+  /\btool_call\b/i,
+  /^print\(/i,
+  /\badd_npc\s*\(/i,
+  /\bupdate_npc\s*\(/i,
+  /\badd_ossuary_item\s*\(/i,
+  /\badd_quest\s*\(/i,
+  /\bupdate_quest\s*\(/i,
+  /\badd_bounty\s*\(/i,
+  /\bupdate_bounty\s*\(/i,
+  /\badd_rumor\s*\(/i,
+  /\bupdate_rumor\s*\(/i,
+  /\badd_spell\s*\(/i,
+  /\badd_inventory_item\s*\(/i,
+  /\bconsume_inventory_item\s*\(/i,
+  /\brecord_saving_throw\s*\(/i,
+  /\bupdate_reputation\s*\(/i,
+  /\badjust_xp\s*\(/i,
+  /\badjust_hp\s*\(/i,
+  /\badd_journal_entry\s*\(/i,
+  /\bupdate_journal_entry\s*\(/i,
+];
+
+const scrubToolLeaks = (value) => {
+  if (!value) return value;
+  const lines = String(value).split('\n');
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    return !TOOL_LEAK_PATTERNS.some((pattern) => pattern.test(trimmed));
+  });
+  return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
+const normalizeQuestStatus = (value) => String(value ?? '').trim().toLowerCase();
+const isQuestCompletedStatus = (value) => {
+  const status = normalizeQuestStatus(value);
+  return status === 'completed' || status === 'complete' || status === 'done' || status === 'resolved';
+};
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const extractDmEntities = (text) => {
+  if (!text) return [];
+  const matches = [];
+  const regex = /<dm-entity>(.*?)<\/dm-entity>/gi;
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const entity = match[1]?.trim();
+    if (entity) matches.push(entity);
+  }
+  return matches;
+};
+
+const renderMessageContent = (content) => {
+  if (!content) return null;
+  const text = scrubToolLeaks(String(content));
+  if (!text) return null;
+  const regex = /<dm-entity>(.*?)<\/dm-entity>/gi;
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(text.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`dm-entity-${match.index}`} className="dm-entity">
+        {match[1]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return text;
+  if (lastIndex < text.length) {
+    output.push(text.slice(lastIndex));
+  }
+  return output;
+};
+
+const renderPlayerMessageContent = (content, entities) => {
+  if (!content) return null;
+  const cleaned = scrubToolLeaks(String(content)).replace(/<\/?dm-entity>/gi, '');
+  if (!cleaned) return null;
+  const normalized = Array.from(
+    new Set((entities ?? []).map((item) => String(item ?? '').trim()).filter(Boolean))
+  );
+  if (!normalized.length) return cleaned;
+  const pattern = normalized
+    .sort((a, b) => b.length - a.length)
+    .map((item) => escapeRegExp(item))
+    .join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(cleaned)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(cleaned.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`player-entity-${match.index}`} className="dm-entity">
+        {match[0]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return cleaned;
+  if (lastIndex < cleaned.length) {
+    output.push(cleaned.slice(lastIndex));
+  }
+  return output;
 };
 
 const normalizeJournalEntries = (entries) => {
@@ -235,100 +258,7 @@ const sampleJournalEntries = [
   },
 ];
 
-const sampleNpcs = [
-  {
-    id: 'npc-1',
-    name: 'Old Greg',
-    role: 'Innkeeper',
-    summary: 'Keeps the hearth warm and the rumors warmer.',
-    reputation: 12,
-    lastSeen: 'Tavern common room',
-  },
-  {
-    id: 'npc-2',
-    name: 'Master Aldwin',
-    role: 'Scribe',
-    summary: 'Catalogues forbidden lore and speaks in riddles.',
-    reputation: -3,
-    lastSeen: 'Scriptorium',
-  },
-  {
-    id: 'npc-3',
-    name: 'River Crest Courier',
-    role: 'Messenger',
-    summary: 'Arrived soaked in stormwater, clutching a sealed letter.',
-    reputation: 4,
-    lastSeen: 'Upper tower room',
-  },
-];
-
-const sampleOssuary = [
-  {
-    id: 'oss-1',
-    name: 'Charred Boneblade',
-    type: 'Weapon',
-    rarity: 'Rare',
-    weaponType: 'Melee (Two-Handed)',
-    damage: '2d6',
-    note: 'Recovered from the ash-wreathed knight.',
-  },
-  {
-    id: 'oss-2',
-    name: 'Cracked Warden Helm',
-    type: 'Armor',
-    rarity: 'Uncommon',
-    slot: 'Head',
-    ac: 2,
-    note: 'Still warm to the touch.',
-  },
-  {
-    id: 'oss-3',
-    name: 'Wraithglass Phial',
-    type: 'Consumable',
-    rarity: 'Epic',
-    effect: 'Soul',
-    potency: '+1d4',
-    note: 'Swirls with trapped light.',
-  },
-  {
-    id: 'oss-5',
-    name: 'Sable Heart Draught',
-    type: 'Consumable',
-    rarity: 'Uncommon',
-    effect: 'Health',
-    potency: '5 HP',
-    heal: 5,
-    note: 'Restores vitality on use.',
-  },
-  {
-    id: 'oss-6',
-    name: 'Tonic of Insight',
-    type: 'Consumable',
-    rarity: 'Uncommon',
-    effect: 'Investigation',
-    potency: '2 XP',
-    skill: 'Investigation',
-    skillXp: 2,
-    note: 'Sharpens the mind for the next challenge.',
-  },
-  {
-    id: 'oss-7',
-    name: 'Elixir of Mastery',
-    type: 'Consumable',
-    rarity: 'Rare',
-    effect: 'Experience',
-    potency: '6 XP',
-    playerXp: 6,
-    note: 'A potent draft that accelerates skill growth.',
-  },
-  {
-    id: 'oss-4',
-    name: 'Blood-etched Signet',
-    type: 'Item',
-    rarity: 'Legendary',
-    note: 'Marked with a forgotten crest.',
-  },
-];
+const EMPTY_OSSUARY = [];
 
 const DEFAULT_SPELLBOOK = [
   {
@@ -1229,11 +1159,16 @@ export default function Campaign() {
   const [questLog, setQuestLog] = useState([]);
   const [bounties, setBounties] = useState([]);
   const [messageInput, setMessageInput] = useState('');
+  const [messageError, setMessageError] = useState('');
+  const [messageSending, setMessageSending] = useState(false);
+  const [introRequested, setIntroRequested] = useState(false);
+  const messageListRef = useRef(null);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
+  const [showCompletedQuests, setShowCompletedQuests] = useState(false);
   const [inventoryTab, setInventoryTab] = useState('inventory');
-  const [rumors, setRumors] = useState(sampleRumors);
+  const [rumors, setRumors] = useState([]);
   const [journalEntries, setJournalEntries] = useState(() =>
     normalizeJournalEntries(sampleJournalEntries)
   );
@@ -1243,8 +1178,8 @@ export default function Campaign() {
   const [journalDraft, setJournalDraft] = useState(EMPTY_JOURNAL_ENTRY);
   const [journalEditingId, setJournalEditingId] = useState(null);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
-  const [inventoryData, setInventoryData] = useState(() => normalizeInventory(sampleInventoryData));
-  const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
+  const [inventoryData, setInventoryData] = useState(() => normalizeInventory(null));
+  const [ossuaryLoot, setOssuaryLoot] = useState(EMPTY_OSSUARY);
   const [hpCurrent, setHpCurrent] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerXp, setPlayerXp] = useState(0);
@@ -1292,6 +1227,43 @@ export default function Campaign() {
   const [skillPoints, setSkillPoints] = useState(0);
   const [saveRolls, setSaveRolls] = useState({});
   const [spellCategory, setSpellCategory] = useState('');
+  const [uidCopied, setUidCopied] = useState(false);
+
+  const applyCampaignData = (data) => {
+    if (!data) return;
+    setCampaign(data);
+    const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
+    const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
+    setHpCurrent(currentHp);
+    setPlayerLevel(Number.isFinite(data.level) ? data.level : 1);
+    setPlayerXp(Number.isFinite(data.level_xp) ? data.level_xp : 0);
+    setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
+    setAbilityScores(data.ability_scores ?? data.stats ?? {});
+    setAbilityProgress(data.ability_progress ?? {});
+    setSkillLevels(data.skills ?? {});
+    setSkillProgress(data.skill_progress ?? {});
+    setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
+    setSaveRolls(data.saving_throws ?? {});
+    setMessages(Array.isArray(data.messages) ? data.messages : []);
+    setQuestLog(Array.isArray(data.quests) ? data.quests : []);
+    setBounties(Array.isArray(data.bounties) ? data.bounties : []);
+    setRumors(Array.isArray(data.rumors) ? data.rumors : []);
+    if (Array.isArray(data.journal) && data.journal.length) {
+      setJournalEntries(normalizeJournalEntries(data.journal));
+    } else {
+      setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
+    }
+    if (data.inventory && !Array.isArray(data.inventory)) {
+      setInventoryData(normalizeInventory(data.inventory));
+    } else {
+      setInventoryData(normalizeInventory(null));
+    }
+    if (Array.isArray(data.ossuary) && data.ossuary.length) {
+      setOssuaryLoot(data.ossuary);
+    } else {
+      setOssuaryLoot(EMPTY_OSSUARY);
+    }
+  };
 
   useEffect(() => {
     const loadCampaign = async () => {
@@ -1303,52 +1275,18 @@ export default function Campaign() {
         return;
       }
 
+      const lookupKey = isUuid(id) ? 'id' : 'access_key';
       const { data, error: fetchError } = await supabase
         .from('campaigns')
         .select('*')
-        .eq('id', id)
+        .eq(lookupKey, id)
         .single();
 
-        if (fetchError) {
-          setError(fetchError.message);
-          setCampaign(null);
-        } else {
-          setCampaign(data);
-          const fallbackHp = Number.isFinite(data.hp) ? data.hp : 20;
-          const currentHp = Number.isFinite(data.hp_current) ? data.hp_current : Math.min(12, fallbackHp);
-          setHpCurrent(currentHp);
-          setPlayerLevel(Number.isFinite(data.level) ? data.level : 1);
-          setPlayerXp(Number.isFinite(data.level_xp) ? data.level_xp : 0);
-          setActiveBuffs(Array.isArray(data.buffs) ? data.buffs : []);
-        setAbilityScores(data.ability_scores ?? data.stats ?? {});
-        setAbilityProgress(data.ability_progress ?? {});
-        setSkillLevels(data.skills ?? {});
-        setSkillProgress(data.skill_progress ?? {});
-        setSkillPoints(Number.isFinite(data.skill_points) ? data.skill_points : 0);
-        setSaveRolls(data.saving_throws ?? {});
-        setMessages(Array.isArray(data.messages) && data.messages.length ? data.messages : sampleMessages(data.name));
-        setQuestLog(Array.isArray(data.quests) && data.quests.length ? data.quests : sampleQuests);
-        setBounties(Array.isArray(data.bounties) && data.bounties.length ? data.bounties : sampleBounties);
-        if (Array.isArray(data.rumors) && data.rumors.length) {
-          setRumors(data.rumors);
-        } else {
-          setRumors(sampleRumors);
-        }
-        if (Array.isArray(data.journal) && data.journal.length) {
-          setJournalEntries(normalizeJournalEntries(data.journal));
-        } else {
-          setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
-        }
-        if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
-          setInventoryData(normalizeInventory(data.inventory));
-        } else {
-          setInventoryData(normalizeInventory(sampleInventoryData));
-        }
-        if (Array.isArray(data.ossuary) && data.ossuary.length) {
-          setOssuaryLoot(data.ossuary);
-        } else {
-          setOssuaryLoot(sampleOssuary);
-        }
+      if (fetchError) {
+        setError(fetchError.message);
+        setCampaign(null);
+      } else {
+        applyCampaignData(data);
       }
       setLoading(false);
     };
@@ -1358,9 +1296,78 @@ export default function Campaign() {
     }
   }, [id]);
 
+  useEffect(() => {
+    setIntroRequested(false);
+  }, [campaign?.id]);
+
+  useEffect(() => {
+    if (!messageListRef.current) return;
+    messageListRef.current.scrollTo({
+      top: messageListRef.current.scrollHeight,
+      behavior: messages.length > 1 ? 'smooth' : 'auto',
+    });
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (!campaign?.id || introRequested || !supabase) return;
+    if (messages.length) return;
+    setIntroRequested(true);
+
+    const runIntro = async () => {
+      setMessageError('');
+      try {
+        const { data, error: introError, response } = await supabase.functions.invoke('dm-chat', {
+          body: {
+            campaignId: campaign.id,
+            accessKey: campaign.access_key,
+            intro: true,
+            location: SAMPLE_LOCATION,
+          },
+        });
+
+        if (introError || data?.error) {
+          let detail = data?.error ?? introError?.message ?? 'Unable to reach the Dungeon Master.';
+          if (response) {
+            try {
+              const textBody = await response.text();
+              if (textBody) {
+                const parsed = JSON.parse(textBody);
+                detail = parsed?.error ?? textBody;
+              }
+            } catch (_error) {
+              // Ignore parsing failures, keep original detail.
+            }
+          }
+          setMessageError(detail);
+          return;
+        }
+
+        if (data?.campaign) {
+          applyCampaignData(data.campaign);
+        } else if (data?.messages) {
+          setMessages(data.messages);
+        }
+      } catch (error) {
+        setMessageError(error?.message ?? 'Unable to reach the Dungeon Master.');
+      }
+    };
+
+    runIntro();
+  }, [campaign, introRequested, messages.length]);
+
   const savePatch = async (patch) => {
     if (!supabase || !campaign?.id) return;
     await supabase.from('campaigns').update(patch).eq('id', campaign.id);
+  };
+
+  const campaignUid = campaign?.access_key || (id && !isUuid(id) ? id : '');
+
+  const handleCopyUid = () => {
+    if (!campaignUid || !navigator?.clipboard) return;
+    navigator.clipboard.writeText(campaignUid).then(() => {
+      setUidCopied(true);
+      setTimeout(() => setUidCopied(false), 1500);
+    });
   };
 
   const abilityScoresByName = abilityScores;
@@ -1380,8 +1387,31 @@ export default function Campaign() {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
     }
-    return sampleNpcs;
+    return [];
   }, [campaign]);
+  const activeQuests = useMemo(
+    () => questLog.filter((quest) => !isQuestCompletedStatus(quest?.status)),
+    [questLog]
+  );
+  const completedQuests = useMemo(
+    () => questLog.filter((quest) => isQuestCompletedStatus(quest?.status)),
+    [questLog]
+  );
+  const playerEntityHighlights = useMemo(() => {
+    const names = new Set();
+    npcList.forEach((npc) => {
+      const name = String(npc?.name ?? '').trim();
+      if (name) names.add(name);
+    });
+    messages.forEach((entry) => {
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) return;
+      extractDmEntities(entry?.content ?? '').forEach((entity) => names.add(entity));
+    });
+    return Array.from(names);
+  }, [messages, npcList, campaign]);
   const classKey = useMemo(() => {
     const raw = campaign?.class_name ?? '';
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
@@ -1590,19 +1620,63 @@ export default function Campaign() {
   }, [reputationByName]);
 
   const handleSendMessage = async (event) => {
-    event.preventDefault();
+    event?.preventDefault?.();
     const text = messageInput.trim();
-    if (!text) return;
+    if (!text || !campaign) return;
+    if (!supabase) {
+      setMessageError('Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
+
     const entry = {
       id: `player-${Date.now()}`,
-      sender: campaign?.name || 'You',
+      sender: campaign.name || 'You',
       location: SAMPLE_LOCATION,
       content: text,
     };
     const next = [...messages, entry];
     setMessages(next);
     setMessageInput('');
-    await savePatch({ messages: next });
+    setMessageError('');
+    setMessageSending(true);
+
+    try {
+      const { data, error: sendError, response } = await supabase.functions.invoke('dm-chat', {
+        body: {
+          campaignId: campaign.id,
+          accessKey: campaign.access_key,
+          message: text,
+          location: SAMPLE_LOCATION,
+        },
+      });
+
+      if (sendError || data?.error) {
+        let detail = data?.error ?? sendError?.message ?? 'Unable to reach the Dungeon Master.';
+        if (response) {
+          try {
+            const textBody = await response.text();
+            if (textBody) {
+              const parsed = JSON.parse(textBody);
+              detail = parsed?.error ?? textBody;
+            }
+          } catch (_error) {
+            // Ignore parsing failures, keep original detail.
+          }
+        }
+        setMessageError(detail);
+        return;
+      }
+
+      if (data?.campaign) {
+        applyCampaignData(data.campaign);
+      } else if (data?.messages) {
+        setMessages(data.messages);
+      }
+    } catch (error) {
+      setMessageError(error?.message ?? 'Unable to reach the Dungeon Master.');
+    } finally {
+      setMessageSending(false);
+    }
   };
 
   const handleStartJournalEntry = () => {
@@ -1667,6 +1741,60 @@ export default function Campaign() {
   const removeInventoryItem = (items, item) => {
     const key = item?.id ?? item?.name;
     return items.filter((entry) => (entry.id ?? entry.name) !== key);
+  };
+
+  const addLootToInventory = (items, baseInventory) => {
+    const sectionMap = {
+      Weapon: 'weapons',
+      Armor: 'armor',
+      Consumable: 'consumables',
+      Item: 'misc',
+    };
+    return items.reduce((nextInventory, item) => {
+      const section = sectionMap[item.type] ?? 'misc';
+      const newItem = {
+        id: item.id ?? `loot-${Date.now()}`,
+        name: item.name,
+        rarity: item.rarity,
+        weaponType: item.weaponType,
+        damage: item.damage,
+        slot: item.slot,
+        ac: item.ac,
+        effect: item.effect,
+        potency: item.potency,
+        heal: item.heal,
+        ability: item.ability,
+        abilityScoreBoost: item.abilityScoreBoost,
+        abilityXp: item.abilityXp,
+        skill: item.skill,
+        skillXp: item.skillXp,
+        playerXp: item.playerXp,
+        note: item.note,
+      };
+      return {
+        ...nextInventory,
+        sections: {
+          ...nextInventory.sections,
+          [section]: [...(nextInventory.sections?.[section] ?? []), newItem],
+        },
+      };
+    }, baseInventory);
+  };
+
+  const handleClaimLoot = async (item) => {
+    const nextOssuary = ossuaryLoot.filter((loot) => loot.id !== item.id);
+    const nextInventory = addLootToInventory([item], normalizeInventory(inventoryData));
+    setOssuaryLoot(nextOssuary);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: nextOssuary, inventory: nextInventory });
+  };
+
+  const handleClaimAllLoot = async () => {
+    if (!ossuaryLoot.length) return;
+    const nextInventory = addLootToInventory(ossuaryLoot, normalizeInventory(inventoryData));
+    setOssuaryLoot([]);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: [], inventory: nextInventory });
   };
 
   const uniqueItemsById = (items) => {
@@ -2116,60 +2244,6 @@ export default function Campaign() {
     });
   };
 
-  const addLootToInventory = (items, baseInventory) => {
-    const sectionMap = {
-      Weapon: 'weapons',
-      Armor: 'armor',
-      Consumable: 'consumables',
-      Item: 'misc',
-    };
-    return items.reduce((nextInventory, item) => {
-      const section = sectionMap[item.type] ?? 'misc';
-      const newItem = {
-        id: item.id ?? `loot-${Date.now()}`,
-        name: item.name,
-        rarity: item.rarity,
-        weaponType: item.weaponType,
-        damage: item.damage,
-        slot: item.slot,
-        ac: item.ac,
-        effect: item.effect,
-        potency: item.potency,
-        heal: item.heal,
-        ability: item.ability,
-        abilityScoreBoost: item.abilityScoreBoost,
-        abilityXp: item.abilityXp,
-        skill: item.skill,
-        skillXp: item.skillXp,
-        playerXp: item.playerXp,
-        note: item.note,
-      };
-      return {
-        ...nextInventory,
-        sections: {
-          ...nextInventory.sections,
-          [section]: [...(nextInventory.sections?.[section] ?? []), newItem],
-        },
-      };
-    }, baseInventory);
-  };
-
-  const handleClaimLoot = async (item) => {
-    const nextOssuary = ossuaryLoot.filter((loot) => loot.id !== item.id);
-    const nextInventory = addLootToInventory([item], normalizeInventory(inventoryData));
-    setOssuaryLoot(nextOssuary);
-    setInventoryData(normalizeInventory(nextInventory));
-    await savePatch({ ossuary: nextOssuary, inventory: nextInventory });
-  };
-
-  const handleClaimAllLoot = async () => {
-    if (!ossuaryLoot.length) return;
-    const nextInventory = addLootToInventory(ossuaryLoot, normalizeInventory(inventoryData));
-    setOssuaryLoot([]);
-    setInventoryData(normalizeInventory(nextInventory));
-    await savePatch({ ossuary: [], inventory: nextInventory });
-  };
-
   const leftMenu = [
     {
       id: 1,
@@ -2315,7 +2389,7 @@ export default function Campaign() {
                 })}
               </div>
             </div>
-            <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-4 min-h-0 min-w-0 flex-1 overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
               {leftTab === 1 && (
                 <div className="grid gap-3">
                   <div className="flex flex-wrap gap-2">
@@ -2323,7 +2397,7 @@ export default function Campaign() {
                       const isActive = logTab === tab;
                       const label =
                         tab === 'quests'
-                          ? `Quest Log (${questLog.length})`
+                          ? `Quest Log (${activeQuests.length})`
                           : tab === 'bounties'
                             ? `Bounties (${bounties.length})`
                             : `Rumors (${rumors.length})`;
@@ -2345,10 +2419,10 @@ export default function Campaign() {
                   </div>
                   {logTab === 'quests' && (
                     <div className="grid gap-3">
-                      {questLog.length === 0 && (
+                      {activeQuests.length === 0 && (
                         <p className="m-0 text-sm text-[var(--soft)]">No active quests.</p>
                       )}
-                      {questLog.map((quest) => (
+                      {activeQuests.map((quest) => (
                         <div
                           key={quest.id}
                           className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
@@ -2382,6 +2456,71 @@ export default function Campaign() {
                           </details>
                         </div>
                       ))}
+                      <details
+                        className="group rounded-[14px] border border-white/10 bg-white/5 p-3"
+                        open={showCompletedQuests}
+                        onToggle={(event) => setShowCompletedQuests(event.currentTarget.open)}
+                      >
+                        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="rounded-full border border-white/15 px-3 py-1 text-xs font-semibold text-[var(--soft)]">
+                              Completed ({completedQuests.length})
+                            </span>
+                            <span className="text-[var(--soft)] transition group-open:rotate-180">
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="1.6"
+                              >
+                                <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                              </svg>
+                            </span>
+                          </div>
+                        </summary>
+                        <div className="mt-3 grid gap-3">
+                          {completedQuests.length === 0 && (
+                            <p className="m-0 text-sm text-[var(--soft)]">No completed quests yet.</p>
+                          )}
+                          {completedQuests.map((quest) => (
+                            <div
+                              key={quest.id}
+                              className="grid gap-1.5 rounded-[14px] border border-white/10 bg-white/5 p-3"
+                            >
+                              <details className="group" open>
+                                <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+                                  <div className="grid gap-1">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="font-semibold">{quest.title}</span>
+                                      <span className="text-[var(--soft)] transition group-open:rotate-180">
+                                        <svg
+                                          viewBox="0 0 24 24"
+                                          className="h-4 w-4"
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="1.6"
+                                        >
+                                          <path d="m6 9 6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                      </span>
+                                    </div>
+                                    <span className="inline-flex w-fit items-center rounded-full border border-white/20 px-2 py-0.5 text-xs font-semibold leading-none text-[var(--soft)]">
+                                      {quest.status}
+                                    </span>
+                                  </div>
+                                </summary>
+                                <div className="mt-2 grid gap-1.5">
+                                  <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
+                                  <span className="text-sm font-semibold text-[var(--accent)]">
+                                    {quest.xp} XP
+                                  </span>
+                                </div>
+                              </details>
+                            </div>
+                          ))}
+                        </div>
+                      </details>
                     </div>
                   )}
                   {logTab === 'bounties' && (
@@ -2597,6 +2736,7 @@ export default function Campaign() {
                         const rightLabel = tiers[8] ?? tiers[tiers.length - 1] ?? REP_LABELS[rep]?.right ?? 'Positive';
                         const { label, tone } = getRepStatus(rep, safeValue);
                         const position = getRepPosition(safeValue);
+                        const knobPosition = Math.min(94, Math.max(6, position));
                         const fillLeft = safeValue >= 0 ? 50 : position;
                         const fillWidth = (Math.abs(safeValue) / 20) * 50;
                         const tickValues = [-15, -10, -5, 0, 5, 10, 15];
@@ -2610,8 +2750,8 @@ export default function Campaign() {
                                 : 'border-white/20 text-[var(--soft)]';
                         return (
                           <div key={rep} className="grid gap-2 rounded-[14px] border border-white/10 bg-white/5 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <div className="flex items-center gap-2 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="flex min-w-0 items-center gap-2 text-sm">
                                 <span className="rounded-full border border-[rgba(214,179,106,0.4)] p-1 text-[var(--accent)]">
                                   {REP_ICONS[rep]}
                                 </span>
@@ -2643,7 +2783,7 @@ export default function Campaign() {
                               ))}
                               <div
                                 className="absolute -top-2 h-6 w-6 -translate-x-1/2 rounded-full border border-white/20 bg-[rgba(15,17,22,0.95)] text-[var(--accent)] shadow-[0_0_0_4px_rgba(15,17,22,0.6)]"
-                                style={{ left: `${position}%` }}
+                                style={{ left: `${knobPosition}%` }}
                               >
                                 <div className="flex h-full w-full items-center justify-center text-[0.7rem]">
                                   {REP_ICONS[rep]}
@@ -3197,7 +3337,10 @@ export default function Campaign() {
                         <div className="flex items-center justify-between gap-2">
                           <div>
                             <p className="m-0 text-base font-semibold">{npc.name}</p>
-                            <p className="m-0 text-xs text-[var(--soft)]">{npc.role}</p>
+                            <p className="m-0 text-xs text-[var(--soft)]">
+                              {npc.role}
+                              {npc.gender ? ` • ${npc.gender}` : ''}
+                            </p>
                           </div>
                           <span className={`rounded-full border px-3 py-1 text-[0.7rem] uppercase tracking-[0.16em] ${toneClass}`}>
                             {label}
@@ -3369,7 +3512,8 @@ export default function Campaign() {
                             const categoryLabel =
                               spellbook.find((category) => category.id === spellCategory)?.label ??
                               'Spell';
-                            const rank = Number.isFinite(spell.rank) ? spell.rank : 0;
+                            const rankSource = Number.isFinite(spell.rank) ? spell.rank : spell.level;
+                            const rank = Number.isFinite(rankSource) ? rankSource : 0;
                             const tags = [categoryLabel].filter((tag) => tag);
                             const style = SPELL_CATEGORY_STYLES[categoryLabel] ?? SPELL_CATEGORY_STYLES.Magic;
 
@@ -3517,35 +3661,85 @@ export default function Campaign() {
             </div>
           </header>
 
-          <div className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl border border-white/10 bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-            {messages.map((message) => (
-              <div key={message.id} className="grid gap-2 rounded-2xl bg-white/5 p-4">
-                <div className="grid gap-1">
-                  <span className="font-bold tracking-[0.02em] text-[var(--accent)]">
-                    {message.sender}
-                  </span>
-                  <span className="text-sm text-[var(--soft)]">{message.location}</span>
-                </div>
-                <p className="m-0">{message.content}</p>
+          <div
+            ref={messageListRef}
+            className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
+          >
+            {messages.length === 0 ? (
+              <div className="grid gap-2 rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-[var(--soft)]">
+                <span className="font-semibold text-[var(--accent)]">Awaiting the Dungeon Master</span>
+                <span>The first scene is about to begin...</span>
               </div>
-            ))}
+            ) : null}
+            {messages.map((message) => {
+              const isPlayer =
+                message.sender === campaign?.name ||
+                message.sender === 'You' ||
+                message.sender === (campaign?.name ?? '');
+              return (
+                <div key={message.id} className={`flex ${isPlayer ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`grid max-w-[min(620px,100%)] gap-2 rounded-2xl bg-[rgba(28,20,12,0.65)] p-4 ${
+                      isPlayer ? 'text-right' : 'text-left'
+                    }`}
+                  >
+                    <div
+                      className={`flex items-center gap-3 text-sm ${
+                        isPlayer ? 'justify-end' : 'justify-between'
+                      }`}
+                    >
+                      <span className="font-bold tracking-[0.02em] text-[var(--accent)]">
+                        {message.sender}
+                      </span>
+                      <span className="text-sm text-[var(--soft)]">{message.location}</span>
+                    </div>
+                    <p className="m-0 whitespace-pre-wrap break-words">
+                      {isPlayer
+                        ? renderPlayerMessageContent(message.content, playerEntityHighlights)
+                        : renderMessageContent(message.content)}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
-          <form className="sticky bottom-4 z-10 grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(6,8,13,0.85)] p-3 shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur" onSubmit={handleSendMessage}>
-            <input
-              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
-              type="text"
+          <form
+            className="sticky bottom-4 z-10 grid grid-cols-[1fr_auto] items-center gap-3 rounded-2xl border border-white/10 bg-[rgba(6,8,13,0.85)] p-3 shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur"
+            onSubmit={handleSendMessage}
+          >
+            <textarea
+              className="max-h-40 resize-none rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3.5 py-3 text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none focus:ring-2 focus:ring-[rgba(214,179,106,0.4)]"
+              rows={1}
               value={messageInput}
-              onChange={(event) => setMessageInput(event.target.value)}
+              onChange={(event) => {
+                setMessageInput(event.target.value);
+                if (messageError) setMessageError('');
+              }}
+              onInput={(event) => {
+                event.currentTarget.style.height = 'auto';
+                event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`;
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault();
+                  handleSendMessage(event);
+                }
+              }}
               placeholder="Describe your next move..."
+              disabled={messageSending}
             />
             <button
-              className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5"
+              className="rounded-full bg-[var(--accent)] px-4 py-2 font-semibold text-[#111] transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
+              disabled={messageSending}
             >
-              Send
+              {messageSending ? 'Sending...' : 'Send'}
             </button>
           </form>
+          {messageError ? (
+            <p className="m-0 text-sm text-[var(--danger)]">{messageError}</p>
+          ) : null}
         </section>
 
         <aside className="grid max-h-[calc(100vh-140px)] gap-[18px] overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
@@ -3577,6 +3771,18 @@ export default function Campaign() {
           </div>
         </aside>
       </main>
+      {campaignUid ? (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-white/15 bg-[rgba(6,8,13,0.8)] px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[var(--soft)] shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur">
+          <span>UID {campaignUid}</span>
+          <button
+            type="button"
+            className="rounded-full border border-white/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+            onClick={handleCopyUid}
+          >
+            {uidCopied ? 'Copied' : 'Copy'}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

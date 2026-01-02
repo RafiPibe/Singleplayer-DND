@@ -150,3 +150,9 @@
   color: rgba(154, 164, 178, 0.8);
   font-style: normal;
 }
+
+.dm-entity {
+  color: var(--accent);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}

@@ -25,10 +25,15 @@ create table if not exists public.campaigns (
   messages jsonb not null default '[]'::jsonb,
   quests jsonb not null default '[]'::jsonb,
   bounties jsonb not null default '[]'::jsonb,
+  rumors jsonb not null default '[]'::jsonb,
   inventory jsonb not null default '[]'::jsonb,
   buffs jsonb not null default '[]'::jsonb,
   relationships jsonb not null default '[]'::jsonb,
   journal jsonb not null default '[]'::jsonb,
+  npcs jsonb not null default '[]'::jsonb,
+  ossuary jsonb not null default '[]'::jsonb,
+  spellbook jsonb not null default '[]'::jsonb,
+  access_key text not null default lpad((floor(random() * 1000000000))::text, 9, '0') unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -50,9 +55,90 @@ alter table public.campaigns add column if not exists buffs jsonb not null defau
 alter table public.campaigns add column if not exists messages jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists quests jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists bounties jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists rumors jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists inventory jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists relationships jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists journal jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists npcs jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists ossuary jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists spellbook jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists access_key text;
+
+update public.campaigns
+set npcs = (
+  select coalesce(
+    jsonb_agg(
+      case
+        when (npc->>'name') ilike 'pibe' then
+          jsonb_set(npc, '{gender}', to_jsonb('Male'::text), true)
+        else npc
+      end
+    ),
+    '[]'::jsonb
+  )
+  from jsonb_array_elements(npcs) as npc
+)
+where jsonb_typeof(npcs) = 'array';
+
+do $$
+declare
+  record_row record;
+  req integer;
+  remaining integer;
+  lvl integer;
+  start_level integer;
+  gained_levels integer;
+begin
+  for record_row in select id, level, level_xp, skill_points from public.campaigns loop
+    start_level := greatest(1, coalesce(record_row.level, 1));
+    lvl := start_level;
+    remaining := greatest(0, coalesce(record_row.level_xp, 0));
+
+    loop
+      req := case
+        when lvl <= 1 then 2
+        when lvl <= 3 then 3
+        when lvl <= 5 then 4
+        when lvl <= 7 then 5
+        when lvl <= 9 then 6
+        when lvl <= 11 then 7
+        when lvl <= 13 then 8
+        when lvl <= 15 then 10
+        when lvl <= 17 then 12
+        when lvl <= 19 then 14
+        when lvl <= 21 then 18
+        when lvl <= 23 then 22
+        when lvl <= 25 then 28
+        when lvl <= 27 then 34
+        when lvl <= 29 then 42
+        else 50
+      end;
+      exit when lvl >= 30 or remaining < req;
+      remaining := remaining - req;
+      lvl := lvl + 1;
+    end loop;
+
+    gained_levels := greatest(0, lvl - start_level);
+
+    update public.campaigns
+    set level = lvl,
+        level_xp = remaining,
+        skill_points = greatest(0, coalesce(record_row.skill_points, 0)) + gained_levels
+    where id = record_row.id;
+  end loop;
+end $$;
+
+update public.campaigns
+set access_key = lpad((floor(random() * 1000000000))::text, 9, '0')
+where access_key is null;
+
+alter table public.campaigns
+  alter column access_key set default lpad((floor(random() * 1000000000))::text, 9, '0');
+
+create unique index if not exists campaigns_access_key_idx on public.campaigns(access_key);
+
+alter table public.campaigns
+  alter column access_key set not null;
 
 create or replace function public.touch_updated_at()
 returns trigger as $$
