@@ -226,6 +226,17 @@ const parseDiceFromText = (value) => {
   return { count: Number(match[1]), sides: Number(match[2]) };
 };
 
+const parseDcFromText = (value) => {
+  const text = String(value ?? '');
+  const dcMatch = text.match(/\bdc\s*[:\-]?\s*(\d{1,2})\b/i);
+  if (dcMatch) return Number(dcMatch[1]);
+  const successMatch = text.match(/\bsuccess(?:\s+is|\s+on)?\s*(\d{1,2})\b/i);
+  if (successMatch) return Number(successMatch[1]);
+  const targetMatch = text.match(/\btarget\s*(\d{1,2})\b/i);
+  if (targetMatch) return Number(targetMatch[1]);
+  return null;
+};
+
 const rollDiceTotal = (count, sides) => {
   const rolls = [];
   let total = 0;
@@ -243,6 +254,7 @@ const resolveRollContext = (text, abilities, skillsByAbility) => {
     /\bsaving throw\b/i.test(cleaned) ||
     /\bsave\b/i.test(cleaned) ||
     /\bsaving\b/i.test(cleaned);
+  const dc = parseDcFromText(text);
   let ability = null;
   let skill = null;
 
@@ -275,7 +287,7 @@ const resolveRollContext = (text, abilities, skillsByAbility) => {
     });
   }
 
-  return { ability, skill, isSavingThrow };
+  return { ability, skill, isSavingThrow, dc };
 };
 
 const findBonusDice = (buffs) => {
@@ -1866,6 +1878,7 @@ export default function Campaign() {
     let total = result;
     let detailParts = [`${result}`];
     let contextLabel = '';
+    let dcLabel = '';
     let modifierTotal = 0;
 
     if (sides === 20 && lastRollContext?.ability) {
@@ -1899,11 +1912,14 @@ export default function Campaign() {
         : lastRollContext.isSavingThrow
           ? `${ability} save`
           : ability;
+      if (Number.isFinite(lastRollContext.dc)) {
+        dcLabel = ` vs DC ${lastRollContext.dc}`;
+      }
     }
 
     const resultMessage =
       sides === 20 && contextLabel
-        ? `Rolled d${sides} (${contextLabel}): ${detailParts.join(' ')} = ${total}`
+        ? `Rolled d${sides} (${contextLabel}${dcLabel}): ${detailParts.join(' ')} = ${total}`
         : `Rolled d${sides}: ${result}`;
     void sendMessage(resultMessage, { keepInput: true });
   };

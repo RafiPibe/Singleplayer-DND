@@ -939,6 +939,22 @@ const buildContext = (campaign: any) => {
       detail: buff?.detail ?? "",
     }));
   const inventory = normalizeInventory(campaign.inventory);
+  const spellbook = ensureArray(campaign.spellbook)
+    .slice(0, 12)
+    .map((spell: any) => ({
+      name: spell?.name ?? spell?.title ?? "",
+      description: stripHtml(spell?.description ?? ""),
+      roll: spell?.roll ?? spell?.dice ?? "",
+      level: spell?.level ?? spell?.rank ?? 1,
+      category: spell?.category ?? "",
+    }));
+  const ossuary = ensureArray(campaign.ossuary)
+    .slice(0, 6)
+    .map((item: any) => ({
+      name: item?.name ?? "",
+      type: item?.type ?? "",
+      rarity: item?.rarity ?? "",
+    }));
 
   return {
     name: campaign.name,
@@ -959,6 +975,8 @@ const buildContext = (campaign: any) => {
     journal,
     npcs,
     buffs,
+    spellbook,
+    ossuary,
     inventory: {
       summary: inventory.summary,
       equipped: inventory.equipped,
@@ -1066,6 +1084,7 @@ serve(async (req) => {
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
       "When the player attacks or uses a spell/weapon, instruct them to roll the correct dice based on equipped weapon damage (inventory.equipped.weapons) or spell roll, and mention any buff/potion modifiers from buffs. " +
       "If a buff grants a roll bonus (ex: +1d4), include it in the roll instruction. " +
+      "When loot appears, describe it in-world (no UI mentions) and call add_ossuary_item with the item details. " +
       "When adding NPCs, include their gender when known. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
