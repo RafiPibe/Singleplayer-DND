@@ -195,6 +195,101 @@ const renderPlayerMessageContent = (content, entities) => {
   return output;
 };
 
+const ROLL_REQUEST_PATTERNS = [
+  /\broll\b/i,
+  /\broll a\b/i,
+  /\bability check\b/i,
+  /\bskill check\b/i,
+  /\bsaving throw\b/i,
+  /\b\d+d(4|6|8|10|12|20|100)\b/i,
+  /\bd(4|6|8|10|12|20|100)\b/i,
+];
+
+const messageRequestsRoll = (text) => {
+  const cleaned = stripHtml(text ?? '');
+  if (!cleaned) return false;
+  return ROLL_REQUEST_PATTERNS.some((pattern) => pattern.test(cleaned));
+};
+
+const ABILITY_ALIASES = {
+  Strength: ['strength', 'str'],
+  Dexterity: ['dexterity', 'dex'],
+  Constitution: ['constitution', 'con'],
+  Intelligence: ['intelligence', 'int'],
+  Wisdom: ['wisdom', 'wis'],
+  Charisma: ['charisma', 'cha'],
+};
+
+const parseDiceFromText = (value) => {
+  const match = String(value ?? '').match(/(\d+)d(\d+)/i);
+  if (!match) return null;
+  return { count: Number(match[1]), sides: Number(match[2]) };
+};
+
+const rollDiceTotal = (count, sides) => {
+  const rolls = [];
+  let total = 0;
+  for (let index = 0; index < count; index += 1) {
+    const roll = Math.floor(Math.random() * sides) + 1;
+    rolls.push(roll);
+    total += roll;
+  }
+  return { total, rolls };
+};
+
+const resolveRollContext = (text, abilities, skillsByAbility) => {
+  const cleaned = stripHtml(text ?? '').toLowerCase();
+  const isSavingThrow =
+    /\bsaving throw\b/i.test(cleaned) ||
+    /\bsave\b/i.test(cleaned) ||
+    /\bsaving\b/i.test(cleaned);
+  let ability = null;
+  let skill = null;
+
+  Object.entries(skillsByAbility ?? {}).some(([abilityName, abilitySkills]) => {
+    const match = (abilitySkills ?? []).find((skillName) => {
+      if (!skillName) return false;
+      const regex = new RegExp(`\\b${escapeRegExp(String(skillName).toLowerCase())}\\b`, 'i');
+      return regex.test(cleaned);
+    });
+    if (match) {
+      ability = abilityName;
+      skill = match;
+      return true;
+    }
+    return false;
+  });
+
+  if (!ability) {
+    (abilities ?? []).some((abilityName) => {
+      const aliases = ABILITY_ALIASES[abilityName] ?? [String(abilityName).toLowerCase()];
+      const hit = aliases.some((alias) => {
+        const regex = new RegExp(`\\b${escapeRegExp(alias)}\\b`, 'i');
+        return regex.test(cleaned);
+      });
+      if (hit) {
+        ability = abilityName;
+        return true;
+      }
+      return false;
+    });
+  }
+
+  return { ability, skill, isSavingThrow };
+};
+
+const findBonusDice = (buffs) => {
+  for (const buff of buffs ?? []) {
+    const detail = buff?.detail ?? '';
+    if (!detail || !/roll/i.test(detail)) continue;
+    const parsed = parseDiceFromText(detail);
+    if (parsed) {
+      return { ...parsed, label: `${parsed.count}d${parsed.sides}`, source: buff?.name ?? 'Buff' };
+    }
+  }
+  return null;
+};
+
 const normalizeJournalEntries = (entries) => {
   if (!Array.isArray(entries)) return [];
   const stamp = Date.now();
@@ -1433,6 +1528,31 @@ export default function Campaign() {
     if (Array.isArray(stored)) return stored;
     return CLASS_SPELLBOOKS[classKey] ?? DEFAULT_SPELLBOOK;
   }, [campaign, classKey]);
+  const showDiceTray = useMemo(() => {
+    if (!messages.length) return false;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) continue;
+      return messageRequestsRoll(entry?.content ?? '');
+    }
+    return false;
+  }, [messages, campaign]);
+  const lastRollContext = useMemo(() => {
+    if (!messages.length) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) continue;
+      if (!messageRequestsRoll(entry?.content ?? '')) continue;
+      return resolveRollContext(entry?.content ?? '', abilities, skillsByAbility);
+    }
+    return null;
+  }, [messages, campaign, abilities, skillsByAbility]);
 
   useEffect(() => {
     if (!spellbook.length) {
@@ -1619,10 +1739,9 @@ export default function Campaign() {
     };
   }, [reputationByName]);
 
-  const handleSendMessage = async (event) => {
-    event?.preventDefault?.();
-    const text = messageInput.trim();
-    if (!text || !campaign) return;
+  const sendMessage = async (text, options = {}) => {
+    const trimmed = String(text ?? '').trim();
+    if (!trimmed || !campaign || messageSending) return;
     if (!supabase) {
       setMessageError('Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
       return;
@@ -1632,11 +1751,12 @@ export default function Campaign() {
       id: `player-${Date.now()}`,
       sender: campaign.name || 'You',
       location: SAMPLE_LOCATION,
-      content: text,
+      content: trimmed,
     };
-    const next = [...messages, entry];
-    setMessages(next);
-    setMessageInput('');
+    setMessages((prev) => [...prev, entry]);
+    if (!options.keepInput) {
+      setMessageInput('');
+    }
     setMessageError('');
     setMessageSending(true);
 
@@ -1645,7 +1765,7 @@ export default function Campaign() {
         body: {
           campaignId: campaign.id,
           accessKey: campaign.access_key,
-          message: text,
+          message: trimmed,
           location: SAMPLE_LOCATION,
         },
       });
@@ -1677,6 +1797,11 @@ export default function Campaign() {
     } finally {
       setMessageSending(false);
     }
+  };
+
+  const handleSendMessage = async (event) => {
+    event?.preventDefault?.();
+    await sendMessage(messageInput);
   };
 
   const handleStartJournalEntry = () => {
@@ -1736,6 +1861,51 @@ export default function Campaign() {
     const result = Math.floor(Math.random() * sides) + 1;
     const entry = { id: `roll-${Date.now()}-${sides}`, sides, result };
     setRolls((prev) => [entry, ...prev]);
+    if (!showDiceTray) return;
+
+    let total = result;
+    let detailParts = [`${result}`];
+    let contextLabel = '';
+    let modifierTotal = 0;
+
+    if (sides === 20 && lastRollContext?.ability) {
+      const ability = lastRollContext.ability;
+      const abilityScore = abilityScoresByName?.[ability] ?? 10;
+      const abilityMod = getAbilityModifier(abilityScore);
+      modifierTotal += abilityMod;
+      if (abilityMod !== 0) {
+        detailParts.push(`${abilityMod >= 0 ? '+' : ''}${abilityMod} ${ability}`);
+      }
+      if (lastRollContext.skill) {
+        const skillLevel = skillLevelsByName?.[lastRollContext.skill] ?? 0;
+        if (skillLevel) {
+          modifierTotal += skillLevel;
+          detailParts.push(`+${skillLevel} ${lastRollContext.skill}`);
+        }
+      }
+      if (lastRollContext.isSavingThrow && saveProficiencies.includes(ability)) {
+        modifierTotal += SAVE_PROFICIENCY_BONUS;
+        detailParts.push(`+${SAVE_PROFICIENCY_BONUS} proficiency`);
+      }
+      const bonusDice = findBonusDice(activeBuffs);
+      if (bonusDice) {
+        const bonusRoll = rollDiceTotal(bonusDice.count, bonusDice.sides);
+        modifierTotal += bonusRoll.total;
+        detailParts.push(`+${bonusDice.label} (${bonusRoll.total})`);
+      }
+      total += modifierTotal;
+      contextLabel = lastRollContext.skill
+        ? `${lastRollContext.skill}${lastRollContext.isSavingThrow ? ' save' : ''}`
+        : lastRollContext.isSavingThrow
+          ? `${ability} save`
+          : ability;
+    }
+
+    const resultMessage =
+      sides === 20 && contextLabel
+        ? `Rolled d${sides} (${contextLabel}): ${detailParts.join(' ')} = ${total}`
+        : `Rolled d${sides}: ${result}`;
+    void sendMessage(resultMessage, { keepInput: true });
   };
 
   const removeInventoryItem = (items, item) => {
@@ -2352,7 +2522,13 @@ export default function Campaign() {
       <div className="starfield" aria-hidden="true"></div>
       <div className="glow" aria-hidden="true"></div>
 
-      <main className="relative z-10 grid h-screen box-border gap-6 px-[clamp(16px,3vw,40px)] py-6 max-[800px]:grid-cols-1 min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]">
+      <main
+        className={`relative z-10 grid h-screen box-border gap-6 px-[clamp(16px,3vw,40px)] py-6 max-[800px]:grid-cols-1 ${
+          showDiceTray
+            ? 'min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)_minmax(240px,320px)]'
+            : 'min-[801px]:grid-cols-[minmax(260px,320px)_minmax(320px,1fr)]'
+        }`}
+      >
         <aside className="flex max-h-[calc(100vh-140px)] flex-col gap-4">
           <div className="flex min-h-0 flex-1 flex-col rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-4 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
             <div className="grid gap-3">
@@ -3742,37 +3918,39 @@ export default function Campaign() {
           ) : null}
         </section>
 
-        <aside className="grid max-h-[calc(100vh-140px)] gap-[18px] overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-          <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
-            <h3 className="text-lg">Dice Tray</h3>
-            <div className="my-4 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-2.5">
-              {[4, 6, 8, 10, 12, 20, 100].map((sides) => (
-                <button
-                  key={sides}
-                  className="rounded-xl border border-white/20 bg-white/10 p-3 font-bold text-[var(--ink)] transition hover:-translate-y-0.5"
-                  onClick={() => rollDice(sides)}
-                  type="button"
-                >
-                  d{sides}
-                </button>
-              ))}
+        {showDiceTray ? (
+          <aside className="grid max-h-[calc(100vh-140px)] gap-[18px] overflow-y-auto pr-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+            <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
+              <h3 className="text-lg">Dice Tray</h3>
+              <div className="my-4 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-2.5">
+                {[4, 6, 8, 10, 12, 20, 100].map((sides) => (
+                  <button
+                    key={sides}
+                    className="rounded-xl border border-white/20 bg-white/10 p-3 font-bold text-[var(--ink)] transition hover:-translate-y-0.5"
+                    onClick={() => rollDice(sides)}
+                    type="button"
+                  >
+                    d{sides}
+                  </button>
+                ))}
+              </div>
+              <div className="grid max-h-[200px] gap-2 overflow-y-auto pr-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+                {rolls.map((roll) => (
+                  <div className="flex justify-between rounded-xl bg-white/5 px-3 py-2 text-sm" key={roll.id}>
+                    <span>d{roll.sides}</span>
+                    <span>{roll.result}</span>
+                  </div>
+                ))}
+                {rolls.length === 0 && (
+                  <p className="m-0 text-sm text-[var(--soft)]">Roll a die to log results here.</p>
+                )}
+              </div>
             </div>
-            <div className="grid max-h-[200px] gap-2 overflow-y-auto pr-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
-              {rolls.map((roll) => (
-                <div className="flex justify-between rounded-xl bg-white/5 px-3 py-2 text-sm" key={roll.id}>
-                  <span>d{roll.sides}</span>
-                  <span>{roll.result}</span>
-                </div>
-              ))}
-              {rolls.length === 0 && (
-                <p className="m-0 text-sm text-[var(--soft)]">Roll a die to log results here.</p>
-              )}
-            </div>
-          </div>
-        </aside>
+          </aside>
+        ) : null}
       </main>
       {campaignUid ? (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 rounded-full border border-white/15 bg-[rgba(6,8,13,0.8)] px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[var(--soft)] shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur">
+        <div className="fixed bottom-6 left-6 z-50 flex items-center gap-3 rounded-full border border-white/15 bg-[rgba(6,8,13,0.8)] px-4 py-2 text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-[var(--soft)] shadow-[0_18px_40px_rgba(2,6,18,0.6)] backdrop-blur">
           <span>UID {campaignUid}</span>
           <button
             type="button"
