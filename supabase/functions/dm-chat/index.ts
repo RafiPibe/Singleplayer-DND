@@ -28,6 +28,8 @@ const QUEST_XP_DEFAULT = 15;
 const RUMOR_XP_DEFAULT = 5;
 const XP_MIN = 5;
 const XP_MAX = 50;
+const NPC_REP_MIN = -20;
+const NPC_REP_MAX = 20;
 const MAX_LEVEL = 30;
 
 const stripHtml = (value: unknown) => {
@@ -128,10 +130,23 @@ const updateListItem = <T extends { id?: string }>(
 const normalizeName = (value: unknown) => String(value ?? "").trim().toLowerCase();
 const isPibe = (value: unknown) => normalizeName(value) === "pibe";
 
+const clampNpcReputation = (value: unknown, fallback = 0) => {
+  const parsed = asNumber(value, fallback);
+  return clamp(parsed, NPC_REP_MIN, NPC_REP_MAX);
+};
+
 const enforcePibeGender = (list: any[]) =>
   list.map((npc: any) => {
-    if (!isPibe(npc?.name)) return npc;
-    return { ...npc, gender: "Male" };
+    if (!npc) return npc;
+    const repValue = npc?.reputation;
+    const nextNpc = {
+      ...npc,
+      reputation: Number.isFinite(Number(repValue))
+        ? clampNpcReputation(repValue, 0)
+        : repValue,
+    };
+    if (!isPibe(npc?.name)) return nextNpc;
+    return { ...nextNpc, gender: "Male" };
   });
 
 const getLevelRequirement = (level: number) => {
@@ -785,7 +800,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
         summary: args.summary ?? "",
         gender: isPibe(args.name) ? "Male" : args.gender ?? "",
         lastSeen: args.lastSeen ?? "",
-        reputation: asNumber(args.reputation),
+        reputation: clampNpcReputation(args.reputation, 0),
         feeling: args.feeling ?? "",
       });
       next.npcs = npcs;
@@ -793,6 +808,9 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     update_npc: (args) => {
       const npcs = ensureArray(next.npcs);
       const patch = { ...(args.patch ?? {}) };
+      if (patch.reputation !== undefined) {
+        patch.reputation = clampNpcReputation(patch.reputation, 0);
+      }
       if (isPibe(args.name)) {
         patch.gender = "Male";
       }
@@ -914,6 +932,12 @@ const buildContext = (campaign: any) => {
     content: stripHtml(entry.content),
   }));
   const npcs = ensureArray(campaign.npcs).slice(0, 6);
+  const buffs = ensureArray(campaign.buffs)
+    .slice(0, 6)
+    .map((buff: any) => ({
+      name: buff?.name ?? "",
+      detail: buff?.detail ?? "",
+    }));
   const inventory = normalizeInventory(campaign.inventory);
 
   return {
@@ -934,6 +958,7 @@ const buildContext = (campaign: any) => {
     rumors,
     journal,
     npcs,
+    buffs,
     inventory: {
       summary: inventory.summary,
       equipped: inventory.equipped,
@@ -1039,6 +1064,8 @@ serve(async (req) => {
       "When a new quest or rumor emerges, present it as an in-world request, lead, or notice without labeling it. " +
       "Only mention XP or rewards if the player asks. " +
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
+      "When the player attacks or uses a spell/weapon, instruct them to roll the correct dice based on equipped weapon damage (inventory.equipped.weapons) or spell roll, and mention any buff/potion modifiers from buffs. " +
+      "If a buff grants a roll bonus (ex: +1d4), include it in the roll instruction. " +
       "When adding NPCs, include their gender when known. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
