@@ -65,6 +65,22 @@ alter table public.campaigns add column if not exists spellbook jsonb not null d
 alter table public.campaigns add column if not exists access_key text;
 
 update public.campaigns
+set npcs = (
+  select coalesce(
+    jsonb_agg(
+      case
+        when (npc->>'name') ilike 'pibe' then
+          jsonb_set(npc, '{gender}', to_jsonb('Male'::text), true)
+        else npc
+      end
+    ),
+    '[]'::jsonb
+  )
+  from jsonb_array_elements(npcs) as npc
+)
+where jsonb_typeof(npcs) = 'array';
+
+update public.campaigns
 set access_key = lpad((floor(random() * 1000000000))::text, 9, '0')
 where access_key is null;
 

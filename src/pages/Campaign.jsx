@@ -7,7 +7,7 @@ import { getValueStyle } from '../lib/valueStyle.js';
 import { getAbilityModifier, getAbilityRequirement, getSaveModifier } from '../data/abilities.js';
 import { useGameData } from '../lib/gameData.js';
 
-const SAMPLE_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
+const SAMPLE_LOCATION = "Pibe's Tavern | Common room | Night";
 const isUuid = (value) =>
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
     value ?? ''
@@ -46,70 +46,10 @@ const sampleRumors = [
     level: 1,
     xp: 50,
     summary:
-      'Old Greg mentions a creator whose gifts blur the lines between the three magical traditions.',
-    notes: ['Old Greg, the innkeeper', 'Master Aldwin at the Scriptorium'],
+      'Pibe mentions a creator whose gifts blur the lines between the three magical traditions.',
+    notes: ["Pibe, the tavern owner", 'Master Aldwin at the Scriptorium'],
   },
 ];
-
-const sampleInventoryData = {
-  summary: {
-    crowns: 15,
-    ac: 4,
-    damage: '1d6',
-    weaponType: 'One-Handed +2',
-  },
-  equipped: {
-    weapons: [
-      { name: 'Sprouting Dagger', type: 'Melee (One-Handed)', damage: '1d6', rarity: 'Common' },
-      null,
-    ],
-    armor: {
-      Head: null,
-      Body: { name: 'Verdant Tunic', ac: 3, rarity: 'Uncommon' },
-      Arms: null,
-      Leggings: { name: 'Twig Leggings', ac: 1, rarity: 'Common' },
-      Cloak: null,
-    },
-  },
-  sections: {
-    weapons: [
-      {
-        id: 'wpn-1',
-        name: 'Sprouting Dagger',
-        rarity: 'Common',
-        weaponType: 'Melee (One-Handed)',
-        damage: '1d6',
-      },
-      {
-        id: 'wpn-2',
-        name: 'Gravebound Greatsword',
-        rarity: 'Rare',
-        weaponType: 'Melee (Two-Handed)',
-        damage: '1d12',
-      },
-    ],
-    armor: [
-      { id: 'arm-1', name: 'Verdant Tunic', rarity: 'Uncommon', slot: 'Chest', ac: 3 },
-      { id: 'arm-2', name: 'Twig Leggings', rarity: 'Common', slot: 'Legs', ac: 1 },
-    ],
-    consumables: [
-      { id: 'con-1', name: 'Pale Verdant Draught', rarity: 'Common', effect: 'Health', potency: '5 HP', heal: 5 },
-      { id: 'con-2', name: 'Pale Wraith Essence', rarity: 'Uncommon', effect: 'Soul', potency: '+1d4' },
-      {
-        id: 'con-3',
-        name: 'Tonic of Insight',
-        rarity: 'Uncommon',
-        effect: 'Investigation',
-        potency: '2 XP',
-        skill: 'Investigation',
-        skillXp: 2,
-      },
-    ],
-    misc: [
-      { id: 'misc-1', name: 'Tavern Crest Token', rarity: 'Common', note: 'Quest item' },
-    ],
-  },
-};
 
 const EMPTY_EQUIPPED = {
   weapons: [null, null],
@@ -122,12 +62,28 @@ const EMPTY_EQUIPPED = {
   },
 };
 
+const EMPTY_INVENTORY = {
+  summary: {
+    crowns: 0,
+    ac: 0,
+    damage: '',
+    weaponType: '',
+  },
+  equipped: EMPTY_EQUIPPED,
+  sections: {
+    weapons: [],
+    armor: [],
+    consumables: [],
+    misc: [],
+  },
+};
+
 const normalizeInventory = (inventory) => {
-  const base = inventory && !Array.isArray(inventory) ? inventory : sampleInventoryData;
+  const base = inventory && !Array.isArray(inventory) ? inventory : EMPTY_INVENTORY;
   return {
     ...base,
     summary: {
-      ...sampleInventoryData.summary,
+      ...EMPTY_INVENTORY.summary,
       ...(base.summary ?? {}),
     },
     equipped: {
@@ -153,9 +109,46 @@ const stripHtml = (value) => {
   return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 };
 
+const TOOL_LEAK_PATTERNS = [
+  /\bdefault_api\b/i,
+  /\bfunction_call\b/i,
+  /\btool_call\b/i,
+  /^print\(/i,
+  /\badd_npc\s*\(/i,
+  /\bupdate_npc\s*\(/i,
+  /\badd_ossuary_item\s*\(/i,
+  /\badd_quest\s*\(/i,
+  /\bupdate_quest\s*\(/i,
+  /\badd_bounty\s*\(/i,
+  /\bupdate_bounty\s*\(/i,
+  /\badd_rumor\s*\(/i,
+  /\bupdate_rumor\s*\(/i,
+  /\badd_spell\s*\(/i,
+  /\badd_inventory_item\s*\(/i,
+  /\bconsume_inventory_item\s*\(/i,
+  /\brecord_saving_throw\s*\(/i,
+  /\bupdate_reputation\s*\(/i,
+  /\badjust_xp\s*\(/i,
+  /\badjust_hp\s*\(/i,
+  /\badd_journal_entry\s*\(/i,
+  /\bupdate_journal_entry\s*\(/i,
+];
+
+const scrubToolLeaks = (value) => {
+  if (!value) return value;
+  const lines = String(value).split('\n');
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    return !TOOL_LEAK_PATTERNS.some((pattern) => pattern.test(trimmed));
+  });
+  return filtered.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+};
+
 const renderMessageContent = (content) => {
   if (!content) return null;
-  const text = String(content);
+  const text = scrubToolLeaks(String(content));
+  if (!text) return null;
   const regex = /<dm-entity>(.*?)<\/dm-entity>/gi;
   const output = [];
   let lastIndex = 0;
@@ -243,100 +236,7 @@ const sampleJournalEntries = [
   },
 ];
 
-const sampleNpcs = [
-  {
-    id: 'npc-1',
-    name: 'Old Greg',
-    role: 'Innkeeper',
-    summary: 'Keeps the hearth warm and the rumors warmer.',
-    reputation: 12,
-    lastSeen: 'Tavern common room',
-  },
-  {
-    id: 'npc-2',
-    name: 'Master Aldwin',
-    role: 'Scribe',
-    summary: 'Catalogues forbidden lore and speaks in riddles.',
-    reputation: -3,
-    lastSeen: 'Scriptorium',
-  },
-  {
-    id: 'npc-3',
-    name: 'River Crest Courier',
-    role: 'Messenger',
-    summary: 'Arrived soaked in stormwater, clutching a sealed letter.',
-    reputation: 4,
-    lastSeen: 'Upper tower room',
-  },
-];
-
-const sampleOssuary = [
-  {
-    id: 'oss-1',
-    name: 'Charred Boneblade',
-    type: 'Weapon',
-    rarity: 'Rare',
-    weaponType: 'Melee (Two-Handed)',
-    damage: '2d6',
-    note: 'Recovered from the ash-wreathed knight.',
-  },
-  {
-    id: 'oss-2',
-    name: 'Cracked Warden Helm',
-    type: 'Armor',
-    rarity: 'Uncommon',
-    slot: 'Head',
-    ac: 2,
-    note: 'Still warm to the touch.',
-  },
-  {
-    id: 'oss-3',
-    name: 'Wraithglass Phial',
-    type: 'Consumable',
-    rarity: 'Epic',
-    effect: 'Soul',
-    potency: '+1d4',
-    note: 'Swirls with trapped light.',
-  },
-  {
-    id: 'oss-5',
-    name: 'Sable Heart Draught',
-    type: 'Consumable',
-    rarity: 'Uncommon',
-    effect: 'Health',
-    potency: '5 HP',
-    heal: 5,
-    note: 'Restores vitality on use.',
-  },
-  {
-    id: 'oss-6',
-    name: 'Tonic of Insight',
-    type: 'Consumable',
-    rarity: 'Uncommon',
-    effect: 'Investigation',
-    potency: '2 XP',
-    skill: 'Investigation',
-    skillXp: 2,
-    note: 'Sharpens the mind for the next challenge.',
-  },
-  {
-    id: 'oss-7',
-    name: 'Elixir of Mastery',
-    type: 'Consumable',
-    rarity: 'Rare',
-    effect: 'Experience',
-    potency: '6 XP',
-    playerXp: 6,
-    note: 'A potent draft that accelerates skill growth.',
-  },
-  {
-    id: 'oss-4',
-    name: 'Blood-etched Signet',
-    type: 'Item',
-    rarity: 'Legendary',
-    note: 'Marked with a forgotten crest.',
-  },
-];
+const EMPTY_OSSUARY = [];
 
 const DEFAULT_SPELLBOOK = [
   {
@@ -1239,6 +1139,7 @@ export default function Campaign() {
   const [messageInput, setMessageInput] = useState('');
   const [messageError, setMessageError] = useState('');
   const [messageSending, setMessageSending] = useState(false);
+  const [introRequested, setIntroRequested] = useState(false);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
@@ -1253,8 +1154,8 @@ export default function Campaign() {
   const [journalDraft, setJournalDraft] = useState(EMPTY_JOURNAL_ENTRY);
   const [journalEditingId, setJournalEditingId] = useState(null);
   const [playerInfoOpen, setPlayerInfoOpen] = useState(false);
-  const [inventoryData, setInventoryData] = useState(() => normalizeInventory(sampleInventoryData));
-  const [ossuaryLoot, setOssuaryLoot] = useState(sampleOssuary);
+  const [inventoryData, setInventoryData] = useState(() => normalizeInventory(null));
+  const [ossuaryLoot, setOssuaryLoot] = useState(EMPTY_OSSUARY);
   const [hpCurrent, setHpCurrent] = useState(0);
   const [playerLevel, setPlayerLevel] = useState(1);
   const [playerXp, setPlayerXp] = useState(0);
@@ -1332,15 +1233,15 @@ export default function Campaign() {
     } else {
       setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
     }
-    if (data.inventory && !Array.isArray(data.inventory) && data.inventory.summary) {
+    if (data.inventory && !Array.isArray(data.inventory)) {
       setInventoryData(normalizeInventory(data.inventory));
     } else {
-      setInventoryData(normalizeInventory(sampleInventoryData));
+      setInventoryData(normalizeInventory(null));
     }
     if (Array.isArray(data.ossuary) && data.ossuary.length) {
       setOssuaryLoot(data.ossuary);
     } else {
-      setOssuaryLoot(sampleOssuary);
+      setOssuaryLoot(EMPTY_OSSUARY);
     }
   };
 
@@ -1375,6 +1276,57 @@ export default function Campaign() {
     }
   }, [id]);
 
+  useEffect(() => {
+    setIntroRequested(false);
+  }, [campaign?.id]);
+
+  useEffect(() => {
+    if (!campaign?.id || introRequested || !supabase) return;
+    if (messages.length) return;
+    setIntroRequested(true);
+
+    const runIntro = async () => {
+      setMessageError('');
+      try {
+        const { data, error: introError, response } = await supabase.functions.invoke('dm-chat', {
+          body: {
+            campaignId: campaign.id,
+            accessKey: campaign.access_key,
+            intro: true,
+            location: SAMPLE_LOCATION,
+          },
+        });
+
+        if (introError || data?.error) {
+          let detail = data?.error ?? introError?.message ?? 'Unable to reach the Dungeon Master.';
+          if (response) {
+            try {
+              const textBody = await response.text();
+              if (textBody) {
+                const parsed = JSON.parse(textBody);
+                detail = parsed?.error ?? textBody;
+              }
+            } catch (_error) {
+              // Ignore parsing failures, keep original detail.
+            }
+          }
+          setMessageError(detail);
+          return;
+        }
+
+        if (data?.campaign) {
+          applyCampaignData(data.campaign);
+        } else if (data?.messages) {
+          setMessages(data.messages);
+        }
+      } catch (error) {
+        setMessageError(error?.message ?? 'Unable to reach the Dungeon Master.');
+      }
+    };
+
+    runIntro();
+  }, [campaign, introRequested, messages.length]);
+
   const savePatch = async (patch) => {
     if (!supabase || !campaign?.id) return;
     await supabase.from('campaigns').update(patch).eq('id', campaign.id);
@@ -1407,7 +1359,7 @@ export default function Campaign() {
     if (Array.isArray(campaign?.npcs) && campaign.npcs.length) {
       return campaign.npcs;
     }
-    return sampleNpcs;
+    return [];
   }, [campaign]);
   const classKey = useMemo(() => {
     const raw = campaign?.class_name ?? '';
@@ -1738,6 +1690,60 @@ export default function Campaign() {
   const removeInventoryItem = (items, item) => {
     const key = item?.id ?? item?.name;
     return items.filter((entry) => (entry.id ?? entry.name) !== key);
+  };
+
+  const addLootToInventory = (items, baseInventory) => {
+    const sectionMap = {
+      Weapon: 'weapons',
+      Armor: 'armor',
+      Consumable: 'consumables',
+      Item: 'misc',
+    };
+    return items.reduce((nextInventory, item) => {
+      const section = sectionMap[item.type] ?? 'misc';
+      const newItem = {
+        id: item.id ?? `loot-${Date.now()}`,
+        name: item.name,
+        rarity: item.rarity,
+        weaponType: item.weaponType,
+        damage: item.damage,
+        slot: item.slot,
+        ac: item.ac,
+        effect: item.effect,
+        potency: item.potency,
+        heal: item.heal,
+        ability: item.ability,
+        abilityScoreBoost: item.abilityScoreBoost,
+        abilityXp: item.abilityXp,
+        skill: item.skill,
+        skillXp: item.skillXp,
+        playerXp: item.playerXp,
+        note: item.note,
+      };
+      return {
+        ...nextInventory,
+        sections: {
+          ...nextInventory.sections,
+          [section]: [...(nextInventory.sections?.[section] ?? []), newItem],
+        },
+      };
+    }, baseInventory);
+  };
+
+  const handleClaimLoot = async (item) => {
+    const nextOssuary = ossuaryLoot.filter((loot) => loot.id !== item.id);
+    const nextInventory = addLootToInventory([item], normalizeInventory(inventoryData));
+    setOssuaryLoot(nextOssuary);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: nextOssuary, inventory: nextInventory });
+  };
+
+  const handleClaimAllLoot = async () => {
+    if (!ossuaryLoot.length) return;
+    const nextInventory = addLootToInventory(ossuaryLoot, normalizeInventory(inventoryData));
+    setOssuaryLoot([]);
+    setInventoryData(normalizeInventory(nextInventory));
+    await savePatch({ ossuary: [], inventory: nextInventory });
   };
 
   const uniqueItemsById = (items) => {
@@ -2185,60 +2191,6 @@ export default function Campaign() {
       level: nextPlayerLevel,
       level_xp: nextPlayerXp,
     });
-  };
-
-  const addLootToInventory = (items, baseInventory) => {
-    const sectionMap = {
-      Weapon: 'weapons',
-      Armor: 'armor',
-      Consumable: 'consumables',
-      Item: 'misc',
-    };
-    return items.reduce((nextInventory, item) => {
-      const section = sectionMap[item.type] ?? 'misc';
-      const newItem = {
-        id: item.id ?? `loot-${Date.now()}`,
-        name: item.name,
-        rarity: item.rarity,
-        weaponType: item.weaponType,
-        damage: item.damage,
-        slot: item.slot,
-        ac: item.ac,
-        effect: item.effect,
-        potency: item.potency,
-        heal: item.heal,
-        ability: item.ability,
-        abilityScoreBoost: item.abilityScoreBoost,
-        abilityXp: item.abilityXp,
-        skill: item.skill,
-        skillXp: item.skillXp,
-        playerXp: item.playerXp,
-        note: item.note,
-      };
-      return {
-        ...nextInventory,
-        sections: {
-          ...nextInventory.sections,
-          [section]: [...(nextInventory.sections?.[section] ?? []), newItem],
-        },
-      };
-    }, baseInventory);
-  };
-
-  const handleClaimLoot = async (item) => {
-    const nextOssuary = ossuaryLoot.filter((loot) => loot.id !== item.id);
-    const nextInventory = addLootToInventory([item], normalizeInventory(inventoryData));
-    setOssuaryLoot(nextOssuary);
-    setInventoryData(normalizeInventory(nextInventory));
-    await savePatch({ ossuary: nextOssuary, inventory: nextInventory });
-  };
-
-  const handleClaimAllLoot = async () => {
-    if (!ossuaryLoot.length) return;
-    const nextInventory = addLootToInventory(ossuaryLoot, normalizeInventory(inventoryData));
-    setOssuaryLoot([]);
-    setInventoryData(normalizeInventory(nextInventory));
-    await savePatch({ ossuary: [], inventory: nextInventory });
   };
 
   const leftMenu = [
@@ -3269,7 +3221,10 @@ export default function Campaign() {
                         <div className="flex items-center justify-between gap-2">
                           <div>
                             <p className="m-0 text-base font-semibold">{npc.name}</p>
-                            <p className="m-0 text-xs text-[var(--soft)]">{npc.role}</p>
+                            <p className="m-0 text-xs text-[var(--soft)]">
+                              {npc.role}
+                              {npc.gender ? ` • ${npc.gender}` : ''}
+                            </p>
                           </div>
                           <span className={`rounded-full border px-3 py-1 text-[0.7rem] uppercase tracking-[0.16em] ${toneClass}`}>
                             {label}
@@ -3441,7 +3396,8 @@ export default function Campaign() {
                             const categoryLabel =
                               spellbook.find((category) => category.id === spellCategory)?.label ??
                               'Spell';
-                            const rank = Number.isFinite(spell.rank) ? spell.rank : 0;
+                            const rankSource = Number.isFinite(spell.rank) ? spell.rank : spell.level;
+                            const rank = Number.isFinite(rankSource) ? rankSource : 0;
                             const tags = [categoryLabel].filter((tag) => tag);
                             const style = SPELL_CATEGORY_STYLES[categoryLabel] ?? SPELL_CATEGORY_STYLES.Magic;
 
@@ -3592,8 +3548,8 @@ export default function Campaign() {
           <div className="grid max-h-[calc(100vh-280px)] gap-3 overflow-y-auto rounded-2xl border border-white/10 bg-[rgba(7,9,14,0.7)] p-4 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
             {messages.length === 0 ? (
               <div className="grid gap-2 rounded-2xl border border-dashed border-white/10 bg-white/5 p-4 text-sm text-[var(--soft)]">
-                <span className="font-semibold text-[var(--accent)]">No messages yet</span>
-                <span>Send your first action to begin the story.</span>
+                <span className="font-semibold text-[var(--accent)]">Awaiting the Dungeon Master</span>
+                <span>The first scene is about to begin...</span>
               </div>
             ) : null}
             {messages.map((message) => (

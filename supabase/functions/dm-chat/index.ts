@@ -9,7 +9,7 @@ const corsHeaders = {
 
 const MODEL = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash";
 const MODEL_ID = MODEL.replace(/^models\//, "");
-const DEFAULT_LOCATION = "Old Greg's Tavern | Upper tower room | Night";
+const DEFAULT_LOCATION = "Pibe's Tavern | Common room | Night";
 
 const ensureArray = (value: unknown) => (Array.isArray(value) ? value : []);
 const ensureObject = (value: unknown) =>
@@ -27,6 +27,48 @@ const makeId = (prefix: string) => `${prefix}-${crypto.randomUUID()}`;
 const stripHtml = (value: unknown) => {
   if (!value) return "";
   return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const TOOL_LEAK_PATTERNS = [
+  /\bdefault_api\b/i,
+  /\bfunction_call\b/i,
+  /\btool_call\b/i,
+  /^print\(/i,
+  /\badd_npc\s*\(/i,
+  /\bupdate_npc\s*\(/i,
+  /\badd_ossuary_item\s*\(/i,
+  /\badd_quest\s*\(/i,
+  /\bupdate_quest\s*\(/i,
+  /\badd_bounty\s*\(/i,
+  /\bupdate_bounty\s*\(/i,
+  /\badd_rumor\s*\(/i,
+  /\bupdate_rumor\s*\(/i,
+  /\badd_spell\s*\(/i,
+  /\badd_inventory_item\s*\(/i,
+  /\bconsume_inventory_item\s*\(/i,
+  /\brecord_saving_throw\s*\(/i,
+  /\bupdate_reputation\s*\(/i,
+  /\badjust_xp\s*\(/i,
+  /\badjust_hp\s*\(/i,
+  /\badd_journal_entry\s*\(/i,
+  /\bupdate_journal_entry\s*\(/i,
+];
+
+const scrubToolLeaks = (value: string) => {
+  if (!value) return value;
+  const lines = value.split("\n");
+  const filtered = lines.filter((line) => {
+    const trimmed = line.trim();
+    if (!trimmed) return true;
+    return !TOOL_LEAK_PATTERNS.some((pattern) => pattern.test(trimmed));
+  });
+  return filtered.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+};
+
+const countWords = (value: unknown) => {
+  const text = stripHtml(value);
+  if (!text) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
 };
 
 const normalizeInventory = (value: unknown) => {
@@ -76,6 +118,15 @@ const updateListItem = <T extends { id?: string }>(
     return isMatch ? { ...item, ...patch } : item;
   });
 };
+
+const normalizeName = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const isPibe = (value: unknown) => normalizeName(value) === "pibe";
+
+const enforcePibeGender = (list: any[]) =>
+  list.map((npc: any) => {
+    if (!isPibe(npc?.name)) return npc;
+    return { ...npc, gender: "Male" };
+  });
 
 const tools = [
   {
@@ -305,6 +356,7 @@ const tools = [
           name: { type: "string" },
           role: { type: "string" },
           summary: { type: "string" },
+          gender: { type: "string" },
           lastSeen: { type: "string" },
           reputation: { type: "number" },
           feeling: { type: "string" },
@@ -329,6 +381,7 @@ const tools = [
               name: { type: "string" },
               role: { type: "string" },
               summary: { type: "string" },
+              gender: { type: "string" },
               lastSeen: { type: "string" },
               reputation: { type: "number" },
               feeling: { type: "string" },
@@ -351,6 +404,20 @@ const tools = [
           type: { type: "string" },
           rarity: { type: "string" },
           description: { type: "string" },
+          weaponType: { type: "string" },
+          damage: { type: "string" },
+          slot: { type: "string" },
+          ac: { type: "number" },
+          effect: { type: "string" },
+          potency: { type: "string" },
+          heal: { type: "number" },
+          ability: { type: "string" },
+          abilityScoreBoost: { type: "number" },
+          abilityXp: { type: "number" },
+          skill: { type: "string" },
+          skillXp: { type: "number" },
+          playerXp: { type: "number" },
+          note: { type: "string" },
         },
         required: ["name"],
       },
@@ -532,6 +599,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
         name: args.name ?? "Unknown",
         role: args.role ?? "",
         summary: args.summary ?? "",
+        gender: isPibe(args.name) ? "Male" : args.gender ?? "",
         lastSeen: args.lastSeen ?? "",
         reputation: asNumber(args.reputation),
         feeling: args.feeling ?? "",
@@ -540,7 +608,11 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
     },
     update_npc: (args) => {
       const npcs = ensureArray(next.npcs);
-      next.npcs = updateListItem(npcs, { id: args.id, name: args.name }, args.patch ?? {});
+      const patch = { ...(args.patch ?? {}) };
+      if (isPibe(args.name)) {
+        patch.gender = "Male";
+      }
+      next.npcs = updateListItem(npcs, { id: args.id, name: args.name }, patch);
     },
     add_ossuary_item: (args) => {
       const ossuary = ensureArray(next.ossuary);
@@ -550,6 +622,20 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
         type: args.type ?? "",
         rarity: args.rarity ?? "",
         description: args.description ?? "",
+        weaponType: args.weaponType ?? "",
+        damage: args.damage ?? "",
+        slot: args.slot ?? "",
+        ac: asNumber(args.ac),
+        effect: args.effect ?? "",
+        potency: args.potency ?? "",
+        heal: asNumber(args.heal),
+        ability: args.ability ?? "",
+        abilityScoreBoost: asNumber(args.abilityScoreBoost),
+        abilityXp: asNumber(args.abilityXp),
+        skill: args.skill ?? "",
+        skillXp: asNumber(args.skillXp),
+        playerXp: asNumber(args.playerXp),
+        note: args.note ?? "",
       });
       next.ossuary = ossuary;
     },
@@ -569,7 +655,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[]) => {
       category.spells.push({
         id: makeId("spell"),
         name: spell.name ?? "Unknown Spell",
-        level: asNumber(spell.level),
+        rank: asNumber(spell.level ?? spell.rank, 1),
         description: spell.description ?? "",
         roll: spell.roll ?? "",
       });
@@ -682,6 +768,7 @@ serve(async (req) => {
     const campaignId = payload?.campaignId ?? "";
     const accessKey = payload?.accessKey ?? "";
     const location = payload?.location ?? DEFAULT_LOCATION;
+    const isIntro = Boolean(payload?.intro);
 
     console.log("dm-chat request", {
       hasMessage: Boolean(message),
@@ -691,7 +778,7 @@ serve(async (req) => {
       model: MODEL_ID,
     });
 
-    if (!message) {
+    if (!message && !isIntro) {
       return new Response(JSON.stringify({ error: "Message is required." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -752,22 +839,39 @@ serve(async (req) => {
         content: entry.content ?? "",
       }));
 
+    const needsIntro = isIntro || ensureArray(campaign.messages).length === 0;
+    const pibeLine = needsIntro
+      ? "This is the first DM message. You must introduce <dm-entity>Pibe</dm-entity> (male tavern owner) and call add_npc for Pibe if not already listed."
+      : "If <dm-entity>Pibe</dm-entity> is introduced and not yet in the NPC list, call add_npc for Pibe. Pibe is male.";
+
     const systemPrompt =
       "You are the Dungeon Master for a single-player DnD campaign. " +
-      "Stay concise, cinematic, and responsive to the player. " +
+      "Write immersive, story-forward responses with sensory detail and occasional dialogue. " +
+      "Aim for 2-4 paragraphs per reply and avoid one-liners. " +
+      "Never respond under 120 words unless the player explicitly requests brevity. " +
+      "Include at least one spoken line in quotes when an NPC is present if possible and fit in the story. " +
+      "Never show tool calls, function names, debug text, or code in the response. " +
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
-      "Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
+      "When adding NPCs, include their gender when known. " +
+      pibeLine +
+      " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
 
     const context = buildContext(campaign);
 
     const systemInstruction = `${systemPrompt}\nCampaign context: ${JSON.stringify(context)}`;
+
+    const introPrompt =
+      "Begin the campaign by greeting the player in Pibe's Tavern and introducing <dm-entity>Pibe</dm-entity>. " +
+      "Write at least 140 words, split into 2-4 paragraphs, and include a line of dialogue in quotes. " +
+      "End with a short question about what the player does next.";
+    const userPrompt = isIntro ? introPrompt : message;
 
     const contents = [
       ...history.map((entry: any) => ({
         role: entry.role,
         parts: [{ text: entry.content }],
       })),
-      { role: "user", parts: [{ text: message }] },
+      { role: "user", parts: [{ text: userPrompt }] },
     ];
 
     const functionDeclarations = tools.map((tool) => tool.function);
@@ -853,12 +957,50 @@ serve(async (req) => {
       }
     }
 
-    const playerMessage = {
-      id: makeId("player"),
-      sender: campaign.name ?? "You",
-      location,
-      content: message,
-    };
+    const introFallback =
+      "You push through the heavy door of <dm-entity>Pibe's Tavern</dm-entity> and feel a wave of warmth roll over you. " +
+      "Rain patters against the shutters, and the air is thick with cedar smoke, fresh bread, and the iron tang of a nearby forge. " +
+      "Patrons murmur over half-full mugs while a fiddler worries a slow tune in the corner. " +
+      "Behind the bar, <dm-entity>Pibe</dm-entity> polishes a glass with deliberate care, watching the room without missing a beat.\n\n" +
+      "He lifts his chin toward you and smiles. \"New face, old eyes,\" he says, voice low and friendly. " +
+      "\"If you're looking for trouble, it found this place long before you did.\" " +
+      "A courier brushes past, dropping a sealed note on the counter beside you, its wax still warm. " +
+      "The hearth pops and throws a spark that lands at your feet like a warning.\n\n" +
+      "Pibe sets the glass down and nods toward an empty table near the fire. " +
+      "\"Sit, warm up, and tell me what brings you to <dm-entity>Pibe's Tavern</dm-entity>.\" What do you do?";
+
+    if (isIntro) {
+      let npcs = ensureArray(updatedCampaign.npcs);
+      const hasPibe = npcs.some(
+        (npc: any) => String(npc?.name ?? "").trim().toLowerCase() === "pibe"
+      );
+      if (!hasPibe) {
+        npcs.push({
+          id: makeId("npc"),
+          name: "Pibe",
+          role: "Tavern Owner",
+          summary: "Keeps the hearth warm, the rooms steady, and the gossip flowing.",
+          gender: "Male",
+          lastSeen: "Pibe's Tavern",
+          reputation: 6,
+          feeling: "Welcoming",
+        });
+      }
+      updatedCampaign.npcs = enforcePibeGender(npcs);
+      if (!/pibe/i.test(dmText) || countWords(dmText) < 120) {
+        dmText = introFallback;
+      }
+    } else if (countWords(dmText) > 0 && countWords(dmText) < 80) {
+      dmText =
+        `${dmText}\n\nThe atmosphere settles around you as the moment stretches on, inviting a choice. ` +
+        "You can press forward, ask for details, or change the scene entirely. What do you do?";
+    }
+
+    dmText = scrubToolLeaks(dmText || "");
+    updatedCampaign.npcs = enforcePibeGender(ensureArray(updatedCampaign.npcs));
+    if (isIntro && !dmText) {
+      dmText = introFallback;
+    }
 
     const dmMessage = {
       id: makeId("dm"),
@@ -867,7 +1009,17 @@ serve(async (req) => {
       content: dmText || "The tavern is quiet for a moment...",
     };
 
-    updatedCampaign.messages = [...ensureArray(campaign.messages), playerMessage, dmMessage];
+    if (isIntro) {
+      updatedCampaign.messages = [...ensureArray(campaign.messages), dmMessage];
+    } else {
+      const playerMessage = {
+        id: makeId("player"),
+        sender: campaign.name ?? "You",
+        location,
+        content: message,
+      };
+      updatedCampaign.messages = [...ensureArray(campaign.messages), playerMessage, dmMessage];
+    }
 
     const { data: savedCampaign, error: saveError } = await supabase
       .from("campaigns")

@@ -435,6 +435,9 @@ export default function Admin() {
       buffs: [],
       relationships: [],
       journal: [],
+      npcs: [],
+      ossuary: [],
+      spellbook: [],
     };
   };
 
@@ -512,6 +515,7 @@ export default function Admin() {
     setJsonDrafts({
       inventory: JSON.stringify(campaignDraft.inventory ?? [], null, 2),
       buffs: JSON.stringify(campaignDraft.buffs ?? [], null, 2),
+      spellbook: JSON.stringify(campaignDraft.spellbook ?? [], null, 2),
     });
   }, [campaignDraft]);
 
@@ -576,10 +580,18 @@ export default function Admin() {
       return;
     }
 
+    const spellbookParsed = safeParseJson(jsonDrafts.spellbook ?? '[]');
+    if (!spellbookParsed.ok) {
+      setCampaignError(`Spellbook JSON error: ${spellbookParsed.error}`);
+      setCampaignSaving(false);
+      return;
+    }
+
     const payload = {
       ...campaignDraft,
       inventory: inventoryParsed.value,
       buffs: buffsParsed.value,
+      spellbook: spellbookParsed.value,
     };
 
     let result;
@@ -1235,6 +1247,20 @@ export default function Admin() {
                       value={jsonDrafts.inventory ?? '[]'}
                       onChange={(event) =>
                         setJsonDrafts((prev) => ({ ...prev, inventory: event.target.value }))
+                      }
+                    />
+                  </div>
+
+                  <div className="grid gap-2">
+                    <div className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--soft)]">
+                      Spellbook (JSON)
+                    </div>
+                    <textarea
+                      rows={6}
+                      className="rounded-2xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-4 py-3 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                      value={jsonDrafts.spellbook ?? '[]'}
+                      onChange={(event) =>
+                        setJsonDrafts((prev) => ({ ...prev, spellbook: event.target.value }))
                       }
                     />
                   </div>
