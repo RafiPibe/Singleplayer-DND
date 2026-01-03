@@ -152,6 +152,21 @@ const CLASS_HP_DICE: Record<string, number> = {
   Wizard: 6,
 };
 
+const BACKSTORY_WEAPON_KEYWORDS = [
+  { key: "sword", damage: "1d8", weaponType: "Melee" },
+  { key: "dagger", damage: "1d4", weaponType: "Melee" },
+  { key: "axe", damage: "1d12", weaponType: "Melee" },
+  { key: "mace", damage: "1d6", weaponType: "Melee" },
+  { key: "bow", damage: "1d8", weaponType: "Ranged" },
+  { key: "staff", damage: "1d6", weaponType: "Melee" },
+  { key: "spear", damage: "1d6", weaponType: "Melee" },
+  { key: "hammer", damage: "1d8", weaponType: "Melee" },
+  { key: "club", damage: "1d6", weaponType: "Melee" },
+  { key: "rapier", damage: "1d8", weaponType: "Melee" },
+  { key: "halberd", damage: "1d10", weaponType: "Melee" },
+  { key: "scythe", damage: "1d10", weaponType: "Melee" },
+];
+
 const stripHtml = (value: unknown) => {
   if (!value) return "";
   return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
@@ -371,6 +386,115 @@ const normalizePendingHp = (value: unknown, className: unknown) => {
       return { die, average, count };
     })
     .filter((entry: any) => entry.count > 0);
+};
+
+const cleanWeaponName = (value: unknown) =>
+  String(value ?? "")
+    .replace(/^(?:have|has|had)\s+(?:a|an|the)\s+/i, "")
+    .replace(/^(?:a|an|the|my|your|his|her|their|our)\s+/i, "")
+    .replace(
+      /^(?:(?:common|uncommon|rare|epic|legendary|divine|hellforged|mythic|masterwork|ancient|cursed|blessed|fine|ornate)\s+)+/i,
+      ""
+    )
+    .replace(/[.,;:]+$/g, "")
+    .trim();
+
+const normalizeWeaponKey = (value: unknown) => normalizeName(cleanWeaponName(value));
+
+const extractBackstoryWeapons = (value: unknown) => {
+  const story = stripHtml(value);
+  if (!story) return [];
+  const results = new Map<string, any>();
+  const keywordPattern = BACKSTORY_WEAPON_KEYWORDS.map((entry) => entry.key).join("|");
+  const explicit = new RegExp(
+    `([A-Z][\\w'’\\-]*(?:\\s+[A-Z][\\w'’\\-]*)*\\s+(?:${keywordPattern}))`,
+    "g"
+  );
+  const fallback = new RegExp(
+    `(\\b[\\w'’\\-]+(?:\\s+[\\w'’\\-]+){0,2}\\s+(?:${keywordPattern})\\b)`,
+    "gi"
+  );
+
+  const addMatch = (match: string) => {
+    const name = cleanWeaponName(match);
+    if (!name) return;
+    const lower = normalizeName(name);
+    const weaponKey = BACKSTORY_WEAPON_KEYWORDS.find((entry) => lower.includes(entry.key));
+    if (!weaponKey) return;
+    results.set(lower, {
+      id: makeId("weapon"),
+      name,
+      rarity: "Unique",
+      weaponType: weaponKey.weaponType,
+      type: "Weapon",
+      damage: weaponKey.damage,
+      note: "Backstory item",
+    });
+  };
+
+  let match;
+  while ((match = explicit.exec(story)) !== null) {
+    addMatch(match[1]);
+  }
+  if (!results.size) {
+    while ((match = fallback.exec(story)) !== null) {
+      addMatch(match[1]);
+    }
+  }
+
+  return Array.from(results.values());
+};
+
+const seedBackstoryInventory = (campaign: any) => {
+  const items = extractBackstoryWeapons(campaign?.backstory);
+  if (!items.length) return campaign;
+  const backstoryKeys = new Set(items.map((item: any) => normalizeWeaponKey(item?.name)));
+  const inventory = normalizeInventory(campaign?.inventory);
+  const existing = new Set<string>();
+  const cleanedEquipped = inventory.equipped.weapons.map((item: any) =>
+    item?.name ? { ...item, name: cleanWeaponName(item.name) || item.name } : item
+  );
+  const cleanedWeapons = inventory.sections.weapons.map((item: any) =>
+    item?.name ? { ...item, name: cleanWeaponName(item.name) || item.name } : item
+  );
+  cleanedEquipped.forEach((item: any) => {
+    if (item?.name) existing.add(normalizeWeaponKey(item.name));
+  });
+  const nextWeapons: any[] = [];
+  cleanedWeapons.forEach((item: any) => {
+    const key = item?.name ? normalizeWeaponKey(item.name) : "";
+    if (key && backstoryKeys.has(key)) {
+      if (existing.has(key)) return;
+      existing.add(key);
+    }
+    nextWeapons.push(item);
+  });
+  items.forEach((item: any) => {
+    const key = normalizeWeaponKey(item?.name);
+    if (!key || existing.has(key)) return;
+    nextWeapons.push(item);
+    existing.add(key);
+  });
+  const weaponsChanged = nextWeapons.length !== inventory.sections.weapons.length;
+  const equippedChanged = cleanedEquipped.some((item: any, index: number) => {
+    const original = inventory.equipped.weapons[index];
+    return item?.name && item.name !== original?.name;
+  });
+  if (!weaponsChanged && !equippedChanged) return campaign;
+  return {
+    ...campaign,
+    inventory: {
+      ...inventory,
+      sections: {
+        ...inventory.sections,
+        weapons: nextWeapons,
+      },
+      equipped: {
+        ...inventory.equipped,
+        weapons: cleanedEquipped,
+      },
+    },
+  };
 };
 
 const clampNpcReputation = (value: unknown, fallback = 0) => {
@@ -1886,22 +2010,23 @@ serve(async (req) => {
       });
     }
 
+    const seededCampaign = seedBackstoryInventory(campaign);
     const gameData = await loadGameData(supabase);
     const lootContext = {
       lootConfig: gameData.lootConfig,
       abilities: gameData.abilities,
       skills: gameData.skills,
-      hpMax: asNumber(campaign.hp, 20),
+      hpMax: asNumber(seededCampaign.hp, 20),
     };
 
-    const history = ensureArray(campaign.messages)
+    const history = ensureArray(seededCampaign.messages)
       .slice(-10)
       .map((entry: any) => ({
-        role: entry.sender === campaign.name || entry.sender === "You" ? "user" : "model",
+        role: entry.sender === seededCampaign.name || entry.sender === "You" ? "user" : "model",
         content: entry.content ?? "",
       }));
 
-    const needsIntro = isIntro || ensureArray(campaign.messages).length === 0;
+    const needsIntro = isIntro || ensureArray(seededCampaign.messages).length === 0;
     const pibeLine = needsIntro
       ? "This is the first DM message. You must introduce <dm-entity>Pibe</dm-entity> (male tavern owner) and call add_npc for Pibe if not already listed."
       : "If <dm-entity>Pibe</dm-entity> is introduced and not yet in the NPC list, call add_npc for Pibe. Pibe is male.";
@@ -1936,7 +2061,7 @@ serve(async (req) => {
       pibeLine +
       " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
 
-    const context = buildContext(campaign);
+    const context = buildContext(seededCampaign);
 
     const systemInstruction = `${systemPrompt}\nCampaign context: ${JSON.stringify(context)}`;
 
@@ -1997,7 +2122,7 @@ serve(async (req) => {
       .map((part: any) => part.text)
       .join("");
 
-    let updatedCampaign = { ...campaign };
+    let updatedCampaign = { ...seededCampaign };
 
     if (toolCalls.length) {
       updatedCampaign = applyToolCalls(updatedCampaign, toolCalls, lootContext);

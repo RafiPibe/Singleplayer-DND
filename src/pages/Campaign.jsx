@@ -2680,6 +2680,7 @@ export default function Campaign() {
     Rare: 'border-sky-400/40 text-sky-300',
     Epic: 'border-purple-400/40 text-purple-300',
     Legendary: 'border-amber-400/60 text-amber-300',
+    Unique: 'border-rose-400/50 text-rose-300',
     Divine: 'border-blue-300/60 text-blue-200',
     Hellforged: 'border-red-400/60 text-red-300',
   };
