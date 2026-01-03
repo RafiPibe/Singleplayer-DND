@@ -283,9 +283,62 @@ const extractProperNounPhrases = (text) => {
   return Array.from(results.values());
 };
 
+const extractSingleWordEntities = (text) => {
+  if (!text) return [];
+  const hints = [
+    'named',
+    'called',
+    'known as',
+    'near',
+    'outside',
+    'inside',
+    'in',
+    'at',
+    'from',
+    'to',
+    'toward',
+    'towards',
+    'around',
+    'within',
+    'across',
+    'under',
+    'over',
+    'into',
+    'along',
+    'beyond',
+    'city of',
+    'town of',
+    'village of',
+    'ruins of',
+    'forest of',
+    'road to',
+    'road of',
+    'pass of',
+    'keep of',
+    'fort of',
+    'lake of',
+    'river of',
+  ];
+  const pattern = hints.map((hint) => hint.replace(/\s+/g, '\\s+')).join('|');
+  const regex = new RegExp(`\\b(?:${pattern})\\s+([A-Z][A-Za-z'’\\-]{2,})\\b`, 'g');
+  const results = new Map();
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    const candidate = match[1]?.trim();
+    if (!candidate) continue;
+    const key = normalizeEntityKey(candidate);
+    if (!key || STOP_ENTITY_KEYS.has(key)) continue;
+    if (STOP_ENTITY_WORDS.has(candidate.toLowerCase())) continue;
+    if (!results.has(key)) results.set(key, candidate);
+  }
+
+  return Array.from(results.values());
+};
+
 const highlightEntitiesInText = (content, entities) => {
   if (!content) return [''];
-  const inferred = extractProperNounPhrases(content);
+  const inferred = [...extractProperNounPhrases(content), ...extractSingleWordEntities(content)];
   const normalized = Array.from(
     new Set(
       [...(entities ?? []), ...inferred].map((item) => String(item ?? '').trim()).filter(Boolean)
@@ -331,11 +384,16 @@ const renderMessageContent = (content, allowedEntities, allowedEntityList) => {
 
   while ((match = regex.exec(text)) !== null) {
     const entity = match[1]?.trim();
-    const shouldHighlight = entity
-      ? allowedEntities?.size
-        ? allowedEntities.has(normalizeEntityKey(entity)) || isLikelyEntityName(entity)
-        : isLikelyEntityName(entity)
-      : false;
+    const entityKey = normalizeEntityKey(entity);
+    const isStopEntity =
+      !entityKey || STOP_ENTITY_KEYS.has(entityKey) || STOP_ENTITY_WORDS.has(entity?.toLowerCase?.());
+    const shouldHighlight = Boolean(
+      entity &&
+        !isStopEntity &&
+        (allowedEntities?.size
+          ? allowedEntities.has(entityKey) || isLikelyEntityName(entity)
+          : isLikelyEntityName(entity) || /[A-Z]/.test(String(entity)))
+    );
     if (match.index > lastIndex) {
       output.push(...highlightEntitiesInText(text.slice(lastIndex, match.index), allowedEntityList));
     }
