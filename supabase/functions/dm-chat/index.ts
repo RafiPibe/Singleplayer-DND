@@ -717,6 +717,36 @@ const updateNpcLastSeenFromText = (campaign: any, text: string, location: string
   return changed ? { ...campaign, npcs: updated } : campaign;
 };
 
+const normalizeLocationParts = (location: string) => {
+  const raw = String(location ?? "").trim();
+  if (!raw) return "";
+  const parts = raw
+    .split("|")
+    .map((part) => sanitizeText(part))
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    return `${parts[0]} | ${parts[1]} | ${parts[2]}`;
+  }
+  if (parts.length === 2) {
+    return `${parts[0]} | ${parts[1]} | Unknown`;
+  }
+  if (parts.length === 1) {
+    return `${parts[0]} | Unknown | Unknown`;
+  }
+  return "";
+};
+
+const removePlayerFromNpcs = (campaign: any, playerName: string) => {
+  const name = String(playerName ?? "").trim();
+  if (!name) return campaign;
+  const npcs = ensureArray(campaign?.npcs);
+  if (!npcs.length) return campaign;
+  const filtered = npcs.filter(
+    (npc: any) => normalizeName(npc?.name ?? "") !== normalizeName(name)
+  );
+  return filtered.length === npcs.length ? campaign : { ...campaign, npcs: filtered };
+};
+
 const QUEST_EXTRACTION_ALLOWED = new Set([
   "add_quest",
   "update_quest",
@@ -726,6 +756,8 @@ const QUEST_EXTRACTION_ALLOWED = new Set([
   "update_bounty",
 ]);
 const NPC_EXTRACTION_ALLOWED = new Set(["add_npc", "update_npc"]);
+const LOCATION_EXTRACTION_ALLOWED = new Set(["update_location"]);
+const REPUTATION_EXTRACTION_ALLOWED = new Set(["update_reputation"]);
 
 const applyQuestRewards = (campaign: any) => {
   let next = { ...campaign };
@@ -1519,6 +1551,22 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         });
       }
       next.reputation = rep;
+      const repEntries = Object.entries(rep);
+      if (repEntries.length) {
+        const npcs = ensureArray(next.npcs);
+        if (npcs.length) {
+          const nextNpcs = npcs.map((npc: any) => {
+            const name = String(npc?.name ?? "").trim();
+            if (!name) return npc;
+            const repMatch = repEntries.find(
+              ([repName]) => normalizeName(repName) === normalizeName(name)
+            );
+            if (!repMatch) return npc;
+            return { ...npc, reputation: clampNpcReputation(repMatch[1], npc.reputation ?? 0) };
+          });
+          next.npcs = nextNpcs;
+        }
+      }
     },
     adjust_xp: (args) => {
       const currentLevel = Math.max(1, asNumber(next.level, 1));
@@ -1605,7 +1653,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
     update_location: (args) => {
       const location = sanitizeText(args.location ?? "");
       if (!location) return;
-      next.current_location = location;
+      next.current_location = normalizeLocationParts(location);
     },
     add_journal_entry: (args) => {
       const journal = ensureArray(next.journal);
@@ -1966,7 +2014,7 @@ serve(async (req) => {
     const message = typeof payload?.message === "string" ? payload.message.trim() : "";
     const campaignId = payload?.campaignId ?? "";
     const accessKey = payload?.accessKey ?? "";
-    const baseLocation = payload?.location ?? DEFAULT_LOCATION;
+    const baseLocation = normalizeLocationParts(payload?.location ?? DEFAULT_LOCATION);
     const isIntro = Boolean(payload?.intro);
 
     console.log("dm-chat request", {
@@ -2073,7 +2121,7 @@ serve(async (req) => {
       "When the player casts a spell from their spellbook, acknowledge it and use its roll; if it heals or harms the player, call adjust_hp with the amount once the roll is known. " +
       "If you describe the player taking damage or healing, call adjust_hp with the numeric change. " +
       "If pending_hp is non-empty, the player has level-up HP to resolve; ask them to roll the class die (example: d8) or take the listed average, and call resolve_level_hp with their choice. " +
-      "When the scene shifts to a new place or time, call update_location with a short 'Place | Area | Time' string. " +
+      "When the scene shifts to a new place or time, call update_location with a short 'Place | Area | Time' string (always include 3 parts separated by |). " +
       "When loot appears, describe it in-world (no UI mentions) and call generate_loot with the item type so it is added to the ossuary. " +
       "Use the player's backstory and appearance to seed fitting items; when relevant, call add_inventory_item and avoid duplicates already in inventory. " +
       "When the player gains or spends money, call adjust_crowns to update their currency. " +
@@ -2081,6 +2129,7 @@ serve(async (req) => {
       "Whenever a new named person appears, call add_npc with a brief summary and set lastSeen to the current location. " +
       "When an existing NPC appears again, call update_npc to refresh lastSeen. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
+      "When the player accepts a quest, call update_quest to set status to Active. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
       "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
       "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
@@ -2212,6 +2261,7 @@ serve(async (req) => {
         "You are a tool-routing assistant. Use function calls ONLY when needed to keep quests, rumors, and bounties in sync. " +
         "Create a rumor when NPCs share hearsay, reports, or local talk. " +
         "Create a quest when an NPC asks for help, the player accepts a task, or an objective is clearly offered. " +
+        "When the player agrees to help with a quest, update that quest to status Active. " +
         "If a rumor becomes a concrete objective, create a quest with the same or similar title so the rumor can be cleared. " +
         "Update a quest to Completed only when the player clearly finishes it. " +
         "Avoid duplicates by matching existing titles. If nothing should change, make no function calls.";
@@ -2323,11 +2373,125 @@ serve(async (req) => {
       }
     }
 
+    const hasLocationExtractionCall = toolCalls.some((call: any) =>
+      LOCATION_EXTRACTION_ALLOWED.has(String(call?.name ?? ""))
+    );
+
+    if (!hasLocationExtractionCall && dmText) {
+      const currentLocation = updatedCampaign.current_location ?? baseLocation;
+      const locationInstruction =
+        "You are a tool-routing assistant. Use function calls ONLY when needed to keep the scene location in sync. " +
+        "If the DM message clearly shifts to a new place or time, call update_location with a short 'Place | Area | Time' string. " +
+        "Always include exactly 3 parts separated by ' | ' (Place, Area, Time), even if you must infer a reasonable area or time. " +
+        "Use specific place names mentioned in the DM text (towns, forests, roads, buildings). " +
+        "If the DM text stays in the same scene, make no function calls.";
+
+      const locationPrompt =
+        `Current location: ${currentLocation}\n` +
+        `DM message: ${dmText}\n` +
+        "If a new location is clear, return update_location. Otherwise, return no tool call.";
+
+      const locationResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: locationPrompt }] }],
+            tools: [{ function_declarations: functionDeclarations }],
+            system_instruction: { parts: [{ text: locationInstruction }] },
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      );
+
+      if (locationResponse.ok) {
+        const locationData = await locationResponse.json();
+        const locationCandidate = locationData?.candidates?.[0]?.content ?? {};
+        const locationParts = Array.isArray(locationCandidate.parts) ? locationCandidate.parts : [];
+        const extractedLocationCalls = locationParts
+          .filter((part: any) => part.functionCall)
+          .map((part: any) => ({
+            name: part.functionCall.name,
+            args: part.functionCall.args ?? {},
+          }))
+          .filter((call: any) => LOCATION_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
+
+        if (extractedLocationCalls.length) {
+          updatedCampaign = applyToolCalls(updatedCampaign, extractedLocationCalls, lootContext);
+        }
+      } else {
+        const locationError = await locationResponse.text();
+        console.warn("dm-chat location extraction error", locationError);
+      }
+    }
+
+    const hasReputationExtractionCall = toolCalls.some((call: any) =>
+      REPUTATION_EXTRACTION_ALLOWED.has(String(call?.name ?? ""))
+    );
+
+    if (!hasReputationExtractionCall && dmText) {
+      const npcNames = ensureArray(updatedCampaign.npcs)
+        .map((npc: any) => npc?.name)
+        .filter(Boolean)
+        .join(" | ");
+      const repInstruction =
+        "You are a tool-routing assistant. Use function calls ONLY when needed to keep NPC reputation in sync. " +
+        "Look for clear signals that an NPC's attitude toward the player improved or worsened (gratitude, trust, suspicion, offense, anger, warmth). " +
+        "Call update_reputation with small deltas (±1 or ±2; ±3 only for major shifts). " +
+        "Only update for named NPCs and never for the player. If nothing changes, make no function calls.";
+
+      const repPrompt =
+        `Player name: ${playerNameLabel}\n` +
+        `DM message: ${dmText}\n` +
+        `Known NPCs: ${npcNames || "none"}`;
+
+      const repResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: repPrompt }] }],
+            tools: [{ function_declarations: functionDeclarations }],
+            system_instruction: { parts: [{ text: repInstruction }] },
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      );
+
+      if (repResponse.ok) {
+        const repData = await repResponse.json();
+        const repCandidate = repData?.candidates?.[0]?.content ?? {};
+        const repParts = Array.isArray(repCandidate.parts) ? repCandidate.parts : [];
+        const extractedRepCalls = repParts
+          .filter((part: any) => part.functionCall)
+          .map((part: any) => ({
+            name: part.functionCall.name,
+            args: part.functionCall.args ?? {},
+          }))
+          .filter((call: any) => REPUTATION_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
+
+        if (extractedRepCalls.length) {
+          updatedCampaign = applyToolCalls(updatedCampaign, extractedRepCalls, lootContext);
+        }
+      } else {
+        const repError = await repResponse.text();
+        console.warn("dm-chat reputation extraction error", repError);
+      }
+    }
+
     updatedCampaign = updateNpcLastSeenFromText(
       updatedCampaign,
       dmText || "",
       updatedCampaign.current_location ?? baseLocation
     );
+
+    updatedCampaign = removePlayerFromNpcs(updatedCampaign, campaign?.name ?? "");
 
     updatedCampaign = applyQuestRewards(updatedCampaign);
     {
@@ -2388,7 +2552,7 @@ serve(async (req) => {
       dmText = introFallback;
     }
 
-    const dmLocation = updatedCampaign.current_location ?? baseLocation;
+    const dmLocation = normalizeLocationParts(updatedCampaign.current_location ?? baseLocation);
     const dmMessage = {
       id: makeId("dm"),
       sender: "Dungeon Master",
@@ -2402,7 +2566,7 @@ serve(async (req) => {
       const playerMessage = {
         id: makeId("player"),
         sender: campaign.name ?? "You",
-        location: campaign.current_location ?? baseLocation,
+        location: normalizeLocationParts(campaign.current_location ?? baseLocation),
         content: message,
       };
       updatedCampaign.messages = [...ensureArray(campaign.messages), playerMessage, dmMessage];
