@@ -4111,9 +4111,6 @@ export default function Campaign() {
                   )}
                   {npcList.map((npc) => {
                     const safeValue = Number.isFinite(npc.reputation) ? npc.reputation : 0;
-                    const position = getRepPosition(safeValue);
-                    const fillLeft = safeValue >= 0 ? 50 : position;
-                    const fillWidth = (Math.abs(safeValue) / 20) * 50;
                     const { label, tone } = getNpcDisposition(safeValue);
                     const toneClass =
                       tone === 'positive'
@@ -4143,22 +4140,6 @@ export default function Campaign() {
                         <p className="m-0 text-sm text-[var(--soft)]">{npc.summary}</p>
                         <div className="text-xs text-[var(--soft)]">
                           Last seen: <span className="text-[var(--ink)]">{npc.lastSeen ?? 'Unknown'}</span>
-                        </div>
-                        <div className="grid gap-2">
-                          <div className="flex items-center justify-between text-xs text-[var(--soft)]">
-                            <span>Reputation</span>
-                            <span>{safeValue > 0 ? `+${safeValue}` : safeValue}/20</span>
-                          </div>
-                          <div className="relative h-2 rounded-full bg-white/10">
-                            <div
-                              className="absolute top-0 h-2 rounded-full bg-[var(--accent)]"
-                              style={{ left: `${fillLeft}%`, width: `${fillWidth}%` }}
-                            ></div>
-                            <div
-                              className="absolute -top-1 h-4 w-4 -translate-x-1/2 rounded-full border border-white/20 bg-[rgba(15,17,22,0.95)]"
-                              style={{ left: `${position}%` }}
-                            ></div>
-                          </div>
                         </div>
                       </div>
                     );

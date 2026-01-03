@@ -747,6 +747,16 @@ const removePlayerFromNpcs = (campaign: any, playerName: string) => {
   return filtered.length === npcs.length ? campaign : { ...campaign, npcs: filtered };
 };
 
+const ensureNpcPersistence = (nextCampaign: any, previousCampaign: any, playerName: string) => {
+  const nextNpcs = ensureArray(nextCampaign?.npcs);
+  if (nextNpcs.length) return nextCampaign;
+  const previousNpcs = ensureArray(previousCampaign?.npcs).filter(
+    (npc: any) => normalizeName(npc?.name ?? "") !== normalizeName(playerName ?? "")
+  );
+  if (!previousNpcs.length) return nextCampaign;
+  return { ...nextCampaign, npcs: previousNpcs };
+};
+
 const QUEST_EXTRACTION_ALLOWED = new Set([
   "add_quest",
   "update_quest",
@@ -2492,6 +2502,7 @@ serve(async (req) => {
     );
 
     updatedCampaign = removePlayerFromNpcs(updatedCampaign, campaign?.name ?? "");
+    updatedCampaign = ensureNpcPersistence(updatedCampaign, campaign, campaign?.name ?? "");
 
     updatedCampaign = applyQuestRewards(updatedCampaign);
     {

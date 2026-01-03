@@ -2284,6 +2284,32 @@ export default function Admin() {
                   />
 
                   <ListEditor
+                    label="NPCs"
+                    items={campaignDraft.npcs}
+                    onChange={(next) => updateCampaignField('npcs', next)}
+                    makeNew={() => ({
+                      id: `npc-${Date.now()}`,
+                      name: '',
+                      role: '',
+                      summary: '',
+                      gender: '',
+                      lastSeen: '',
+                      reputation: 0,
+                      feeling: '',
+                    })}
+                    fields={[
+                      { key: 'id', label: 'ID' },
+                      { key: 'name', label: 'Name' },
+                      { key: 'role', label: 'Role' },
+                      { key: 'summary', label: 'Summary', multiline: true },
+                      { key: 'gender', label: 'Gender' },
+                      { key: 'lastSeen', label: 'Last Seen' },
+                      { key: 'reputation', label: 'Reputation', type: 'number' },
+                      { key: 'feeling', label: 'Feeling' },
+                    ]}
+                  />
+
+                  <ListEditor
                     label="Relationships"
                     items={campaignDraft.relationships}
                     onChange={(next) => updateCampaignField('relationships', next)}
