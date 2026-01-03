@@ -20,6 +20,10 @@ const COPPER_PER_PLATINUM = 100 * COPPER_PER_GOLD;
 const sampleQuests = [];
 const sampleBounties = [];
 const sampleRumors = [];
+const MUSIC_BUCKET = 'dnd-bucket';
+const MUSIC_FOLDER = 'music';
+const MUSIC_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'm4a']);
+const MUSIC_FALLBACK_FILES = ['music/TavernMusic.mp3'];
 
 const EMPTY_EQUIPPED = {
   weapons: [null, null],
@@ -122,6 +126,27 @@ const formatCrowns = (value) => {
   const crowns = normalizeCrowns(value);
   return `${crowns.platinum}p ${crowns.gold}g ${crowns.silver}s ${crowns.copper}c`;
 };
+
+const isMusicFileName = (value) => {
+  const name = String(value ?? '');
+  const ext = name.split('.').pop()?.toLowerCase();
+  return Boolean(ext && MUSIC_EXTENSIONS.has(ext));
+};
+
+const buildMusicTracks = (paths, supabaseClient) =>
+  (paths ?? [])
+    .filter((path) => path)
+    .map((path) => {
+      const cleaned = String(path).replace(/^\/+/, '');
+      const fileName = cleaned.split('/').pop() ?? cleaned;
+      const { data: urlData } = supabaseClient.storage.from(MUSIC_BUCKET).getPublicUrl(cleaned);
+      return {
+        name: fileName.replace(/\.[^/.]+$/, ''),
+        fileName,
+        url: urlData?.publicUrl ?? '',
+      };
+    })
+    .filter((track) => track.url);
 
 const TOOL_LEAK_PATTERNS = [
   /\bdefault_api\b/i,
@@ -1517,6 +1542,13 @@ export default function Campaign() {
   const [messageSending, setMessageSending] = useState(false);
   const [introRequested, setIntroRequested] = useState(false);
   const messageListRef = useRef(null);
+  const audioRef = useRef(null);
+  const [musicTracks, setMusicTracks] = useState([]);
+  const [musicTrackIndex, setMusicTrackIndex] = useState(0);
+  const [musicPlaying, setMusicPlaying] = useState(false);
+  const [musicVolume, setMusicVolume] = useState(0.35);
+  const [musicError, setMusicError] = useState('');
+  const [musicLoading, setMusicLoading] = useState(true);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
@@ -1580,6 +1612,134 @@ export default function Campaign() {
   const [saveRolls, setSaveRolls] = useState({});
   const [spellCategory, setSpellCategory] = useState('');
   const [uidCopied, setUidCopied] = useState(false);
+  const musicReady = Boolean(musicTracks[musicTrackIndex]?.url);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadMusicTracks = async () => {
+      if (!supabase) {
+        if (isMounted) {
+          setMusicError(
+            'Missing Supabase configuration. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.'
+          );
+          setMusicTracks([]);
+          setMusicPlaying(false);
+          setMusicLoading(false);
+        }
+        return;
+      }
+
+      setMusicLoading(true);
+      setMusicError('');
+      const { data, error: listError } = await supabase.storage
+        .from(MUSIC_BUCKET)
+        .list(MUSIC_FOLDER, {
+          limit: 50,
+          offset: 0,
+          sortBy: { column: 'name', order: 'asc' },
+        });
+
+      if (!isMounted) return;
+
+      const listedTracks = (data ?? [])
+        .filter((file) => file?.name && isMusicFileName(file.name))
+        .map((file) => `${MUSIC_FOLDER}/${file.name}`);
+      let tracks = buildMusicTracks(listedTracks, supabase);
+      let usedFallback = false;
+
+      if (!tracks.length && MUSIC_FALLBACK_FILES.length) {
+        tracks = buildMusicTracks(MUSIC_FALLBACK_FILES, supabase);
+        usedFallback = Boolean(tracks.length);
+      }
+
+      if (listError && !tracks.length) {
+        setMusicError(listError.message ?? 'Unable to load music from storage.');
+        setMusicTracks([]);
+        setMusicPlaying(false);
+        setMusicLoading(false);
+        return;
+      }
+
+      setMusicTracks(tracks);
+      setMusicTrackIndex((prev) => (tracks.length ? Math.min(prev, tracks.length - 1) : 0));
+
+      if (!tracks.length) {
+        setMusicError('No music files found in storage.');
+        setMusicPlaying(false);
+      } else if (listError && usedFallback) {
+        setMusicError('Storage list blocked; using fallback track.');
+      }
+      setMusicLoading(false);
+    };
+
+    loadMusicTracks();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.volume = musicVolume;
+  }, [musicVolume]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const track = musicTracks[musicTrackIndex];
+    if (!track?.url) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load();
+      if (musicPlaying) {
+        setMusicPlaying(false);
+      }
+      return;
+    }
+    audio.src = track.url;
+    audio.loop = true;
+    audio.load();
+    if (musicPlaying) {
+      audio.play().catch(() => {
+        setMusicPlaying(false);
+      });
+    }
+  }, [musicTracks, musicTrackIndex, musicPlaying]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio || !musicReady) return;
+    let cancelled = false;
+
+    const attemptPlay = async () => {
+      try {
+        await audio.play();
+        if (cancelled) return;
+        setMusicPlaying(true);
+        setMusicError('');
+      } catch (_error) {
+        if (cancelled) return;
+        setMusicPlaying(false);
+        setMusicError('Tap to enable music playback.');
+      }
+    };
+
+    attemptPlay();
+
+    const handleUserGesture = () => {
+      if (!audio.paused) return;
+      attemptPlay();
+    };
+
+    window.addEventListener('pointerdown', handleUserGesture, { once: true });
+    return () => {
+      cancelled = true;
+      window.removeEventListener('pointerdown', handleUserGesture);
+    };
+  }, [musicReady, musicTrackIndex]);
 
   const applyCampaignData = (data) => {
     if (!data) return;
@@ -1720,6 +1880,33 @@ export default function Campaign() {
       setUidCopied(true);
       setTimeout(() => setUidCopied(false), 1500);
     });
+  };
+
+  const handleToggleMusic = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (musicPlaying) {
+      audio.pause();
+      setMusicPlaying(false);
+      return;
+    }
+    if (!musicTracks.length) {
+      setMusicError('No music files found in storage.');
+      return;
+    }
+    try {
+      await audio.play();
+      setMusicError('');
+      setMusicPlaying(true);
+    } catch (playError) {
+      setMusicError('Tap to allow music playback in your browser.');
+      setMusicPlaying(false);
+    }
+  };
+
+  const handleSelectTrack = (event) => {
+    const nextIndex = Number(event.target.value) || 0;
+    setMusicTrackIndex(nextIndex);
   };
 
   const abilityScoresByName = abilityScores;
@@ -4190,14 +4377,59 @@ export default function Campaign() {
         </aside>
 
         <section className="grid min-h-[70vh] grid-rows-[auto_1fr_auto] gap-4">
-          <header className="flex items-center justify-between gap-4">
+          <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h2 className="text-[clamp(1.4rem,2vw,2rem)]">Campaign Narration</h2>
               <p className="m-0 text-sm text-[var(--soft)]">
                 {campaign?.name ? `Now playing | ${campaign.name}` : 'Awaiting adventurer'}
               </p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-end gap-3">
+              <div className="grid gap-1.5">
+                <div className="flex items-center gap-2 rounded-full border border-white/10 bg-[rgba(6,8,13,0.65)] px-2.5 py-1.5 text-[0.6rem] uppercase tracking-[0.18em] text-[var(--soft)]">
+                  <span>Music</span>
+                  <button
+                    className="rounded-full border border-[rgba(214,179,106,0.6)] px-2 py-0.5 text-[0.6rem] font-semibold uppercase tracking-[0.14em] text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-60"
+                    onClick={handleToggleMusic}
+                    type="button"
+                    disabled={!musicReady || musicLoading}
+                  >
+                    {musicPlaying ? 'Pause' : 'Play'}
+                  </button>
+                  <select
+                    className="min-w-[110px] max-w-[140px] rounded-full border border-white/10 bg-[rgba(10,12,18,0.9)] px-2 py-0.5 text-[0.65rem] normal-case tracking-normal text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                    value={musicTrackIndex}
+                    onChange={handleSelectTrack}
+                    disabled={!musicTracks.length || musicLoading}
+                  >
+                    {musicLoading ? (
+                      <option>Loading...</option>
+                    ) : musicTracks.length ? (
+                      musicTracks.map((track, index) => (
+                        <option key={track.fileName} value={index}>
+                          {track.name}
+                        </option>
+                      ))
+                    ) : (
+                      <option>No tracks</option>
+                    )}
+                  </select>
+                  <input
+                    className="h-1 w-14 accent-[var(--accent)]"
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={musicVolume}
+                    onChange={(event) => setMusicVolume(Number(event.target.value))}
+                    disabled={musicLoading}
+                    aria-label="Music volume"
+                  />
+                </div>
+                {musicError ? (
+                  <span className="text-[0.55rem] text-[var(--soft)]">{musicError}</span>
+                ) : null}
+              </div>
               <div className="grid justify-items-end text-xs uppercase tracking-[0.16em] text-[var(--soft)]">
                 <span className="text-red-300">
                   HP {hpCurrent}/{hpMax}
@@ -4338,6 +4570,7 @@ export default function Campaign() {
           </button>
         </div>
       ) : null}
+      <audio ref={audioRef} preload="none" className="hidden" />
     </div>
   );
 }
