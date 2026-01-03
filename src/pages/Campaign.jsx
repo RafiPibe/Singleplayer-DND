@@ -263,11 +263,11 @@ const renderPlayerMessageContent = (content, entities) => {
 };
 
 const ROLL_REQUEST_PATTERNS = [
-  /\broll\b/i,
-  /\broll a\b/i,
   /\bability check\b/i,
   /\bskill check\b/i,
   /\bsaving throw\b/i,
+  /\broll\s+(?:a\s+)?d(4|6|8|10|12|20|100)\b/i,
+  /\broll\s+\d+d(4|6|8|10|12|20|100)\b/i,
   /\b\d+d(4|6|8|10|12|20|100)\b/i,
   /\bd(4|6|8|10|12|20|100)\b/i,
 ];

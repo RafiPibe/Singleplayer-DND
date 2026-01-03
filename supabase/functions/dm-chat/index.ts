@@ -390,7 +390,7 @@ const normalizePendingHp = (value: unknown, className: unknown) => {
 
 const cleanWeaponName = (value: unknown) =>
   String(value ?? "")
-    .replace(/^(?:have|has|had)\s+(?:a|an|the)\s+/i, "")
+    .replace(/^(?:have|has|had|wields?|carry|carries|brandish(?:es)?|hold(?:s|ing)?|use(?:s|d|ing)?)\s+(?:a|an|the)\s+/i, "")
     .replace(/^(?:a|an|the|my|your|his|her|their|our)\s+/i, "")
     .replace(
       /^(?:(?:common|uncommon|rare|epic|legendary|divine|hellforged|mythic|masterwork|ancient|cursed|blessed|fine|ornate)\s+)+/i,
@@ -2251,7 +2251,7 @@ serve(async (req) => {
     }
 
     const introFallback =
-      "You push through the heavy door of <dm-entity>Pibe's Tavern</dm-entity> and feel a wave of warmth roll over you. " +
+      "You push through the heavy door of <dm-entity>Pibe's Tavern</dm-entity> and feel a wave of warmth wash over you. " +
       "Rain patters against the shutters, and the air is thick with cedar smoke, fresh bread, and the iron tang of a nearby forge. " +
       "Patrons murmur over half-full mugs while a fiddler worries a slow tune in the corner. " +
       "Behind the bar, <dm-entity>Pibe</dm-entity> polishes a glass with deliberate care, watching the room without missing a beat.\n\n" +
