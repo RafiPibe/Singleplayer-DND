@@ -698,7 +698,26 @@ const isQuestCompleted = (value: unknown) => {
   return status === "completed" || status === "complete" || status === "done" || status === "resolved";
 };
 
-const TOOL_EXTRACTION_ALLOWED = new Set([
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const updateNpcLastSeenFromText = (campaign: any, text: string, location: string) => {
+  if (!text || !location) return campaign;
+  const npcs = ensureArray(campaign?.npcs);
+  if (!npcs.length) return campaign;
+  let changed = false;
+  const updated = npcs.map((npc: any) => {
+    const name = String(npc?.name ?? "").trim();
+    if (name.length < 3) return npc;
+    const pattern = new RegExp(`\\b${escapeRegExp(name)}(?:'s)?\\b`, "i");
+    if (!pattern.test(text)) return npc;
+    if (npc.lastSeen === location) return npc;
+    changed = true;
+    return { ...npc, lastSeen: location };
+  });
+  return changed ? { ...campaign, npcs: updated } : campaign;
+};
+
+const QUEST_EXTRACTION_ALLOWED = new Set([
   "add_quest",
   "update_quest",
   "add_rumor",
@@ -706,6 +725,7 @@ const TOOL_EXTRACTION_ALLOWED = new Set([
   "add_bounty",
   "update_bounty",
 ]);
+const NPC_EXTRACTION_ALLOWED = new Set(["add_npc", "update_npc"]);
 
 const applyQuestRewards = (campaign: any) => {
   let next = { ...campaign };
@@ -1179,7 +1199,7 @@ const tools = [
           reputation: { type: "number" },
           feeling: { type: "string" },
         },
-        required: ["name", "summary"],
+        required: ["name"],
       },
     },
   },
@@ -1606,13 +1626,14 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       const npcs = ensureArray(next.npcs);
       const rawName = sanitizeText(args.name ?? "Unknown");
       if (!rawName) return;
+      const lastSeen = sanitizeText(args.lastSeen ?? next.current_location ?? "");
       const npcPatch = {
         id: makeId("npc"),
         name: rawName || "Unknown",
         role: sanitizeText(args.role ?? ""),
         summary: sanitizeText(args.summary ?? ""),
         gender: isPibe(rawName) ? "Male" : sanitizeText(args.gender ?? ""),
-        lastSeen: sanitizeText(args.lastSeen ?? ""),
+        lastSeen,
         reputation: clampNpcReputation(args.reputation, 0),
         feeling: sanitizeText(args.feeling ?? ""),
       };
@@ -2045,7 +2066,7 @@ serve(async (req) => {
       "Do not mention UI or meta systems (quest log, rumor list, bounty board, XP totals, tool calls). " +
       "When a new quest or rumor emerges, present it as an in-world request, lead, or notice without labeling it. " +
       "Only mention XP or rewards if the player asks. " +
-      "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
+      "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. Tag single-word names too (ex: <dm-entity>Scarlett</dm-entity>, <dm-entity>Oakhaven</dm-entity>). " +
       "When the player attacks or uses a spell/weapon, instruct them to roll the correct dice based on equipped weapon damage (inventory.equipped.weapons) or spell roll, and mention any buff/potion modifiers from buffs. " +
       "When you ask for any ability check, skill check, or saving throw, explicitly say to roll d20 and name the ability/skill; if unsure, default to roll d20. " +
       "If a buff grants a roll bonus (ex: +1d4), include it in the roll instruction. " +
@@ -2057,6 +2078,8 @@ serve(async (req) => {
       "Use the player's backstory and appearance to seed fitting items; when relevant, call add_inventory_item and avoid duplicates already in inventory. " +
       "When the player gains or spends money, call adjust_crowns to update their currency. " +
       "When adding NPCs, include their gender when known. " +
+      "Whenever a new named person appears, call add_npc with a brief summary and set lastSeen to the current location. " +
+      "When an existing NPC appears again, call update_npc to refresh lastSeen. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
       "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
@@ -2166,12 +2189,12 @@ serve(async (req) => {
       }
     }
 
-    const needsQuestExtraction = !toolCalls.length || !toolCalls.some((call: any) => {
+    const hasQuestExtractionCall = toolCalls.some((call: any) => {
       const name = String(call?.name ?? "");
-      return TOOL_EXTRACTION_ALLOWED.has(name);
+      return QUEST_EXTRACTION_ALLOWED.has(name);
     });
 
-    if (needsQuestExtraction && dmText) {
+    if (!hasQuestExtractionCall && dmText) {
       const questTitles = ensureArray(updatedCampaign.quests)
         .map((quest: any) => quest?.title)
         .filter(Boolean)
@@ -2189,6 +2212,7 @@ serve(async (req) => {
         "You are a tool-routing assistant. Use function calls ONLY when needed to keep quests, rumors, and bounties in sync. " +
         "Create a rumor when NPCs share hearsay, reports, or local talk. " +
         "Create a quest when an NPC asks for help, the player accepts a task, or an objective is clearly offered. " +
+        "If a rumor becomes a concrete objective, create a quest with the same or similar title so the rumor can be cleared. " +
         "Update a quest to Completed only when the player clearly finishes it. " +
         "Avoid duplicates by matching existing titles. If nothing should change, make no function calls.";
 
@@ -2225,7 +2249,7 @@ serve(async (req) => {
             name: part.functionCall.name,
             args: part.functionCall.args ?? {},
           }))
-          .filter((call: any) => TOOL_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
+          .filter((call: any) => QUEST_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
 
         if (extractedCalls.length) {
           updatedCampaign = applyToolCalls(updatedCampaign, extractedCalls, lootContext);
@@ -2235,6 +2259,75 @@ serve(async (req) => {
         console.warn("dm-chat extraction error", extractionError);
       }
     }
+
+    const hasNpcExtractionCall = toolCalls.some((call: any) =>
+      NPC_EXTRACTION_ALLOWED.has(String(call?.name ?? ""))
+    );
+
+    if (!hasNpcExtractionCall && dmText) {
+      const npcNames = ensureArray(updatedCampaign.npcs)
+        .map((npc: any) => npc?.name)
+        .filter(Boolean)
+        .join(" | ");
+      const npcLocation = updatedCampaign.current_location ?? baseLocation;
+      const npcExtractionInstruction =
+        "You are a tool-routing assistant. Use function calls ONLY when needed to keep NPCs in sync. " +
+        "Add an NPC when a named person appears in the DM message. " +
+        "Update an NPC when they appear again or new details (role, summary, gender, reputation, feeling) are mentioned. " +
+        "Set lastSeen to the current location when the NPC appears. " +
+        "Do not add the player as an NPC. Do not add locations, factions, items, monsters, or groups as NPCs. " +
+        "Avoid duplicates by matching existing NPC names. If nothing should change, make no function calls.";
+
+      const npcExtractionPrompt =
+        `Player name: ${playerNameLabel}\n` +
+        `Current location: ${npcLocation}\n` +
+        `DM message: ${dmText}\n` +
+        `Known NPCs: ${npcNames || "none"}`;
+
+      const npcExtractionResponse = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${geminiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: npcExtractionPrompt }] }],
+            tools: [{ function_declarations: functionDeclarations }],
+            system_instruction: { parts: [{ text: npcExtractionInstruction }] },
+            generationConfig: { temperature: 0.2 },
+          }),
+        }
+      );
+
+      if (npcExtractionResponse.ok) {
+        const npcExtractionData = await npcExtractionResponse.json();
+        const npcExtractionCandidate = npcExtractionData?.candidates?.[0]?.content ?? {};
+        const npcExtractionParts = Array.isArray(npcExtractionCandidate.parts)
+          ? npcExtractionCandidate.parts
+          : [];
+        const extractedNpcCalls = npcExtractionParts
+          .filter((part: any) => part.functionCall)
+          .map((part: any) => ({
+            name: part.functionCall.name,
+            args: part.functionCall.args ?? {},
+          }))
+          .filter((call: any) => NPC_EXTRACTION_ALLOWED.has(String(call?.name ?? "")));
+
+        if (extractedNpcCalls.length) {
+          updatedCampaign = applyToolCalls(updatedCampaign, extractedNpcCalls, lootContext);
+        }
+      } else {
+        const npcExtractionError = await npcExtractionResponse.text();
+        console.warn("dm-chat npc extraction error", npcExtractionError);
+      }
+    }
+
+    updatedCampaign = updateNpcLastSeenFromText(
+      updatedCampaign,
+      dmText || "",
+      updatedCampaign.current_location ?? baseLocation
+    );
 
     updatedCampaign = applyQuestRewards(updatedCampaign);
     {
