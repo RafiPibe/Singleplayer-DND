@@ -24,6 +24,32 @@ const MUSIC_BUCKET = 'dnd-bucket';
 const MUSIC_FOLDER = 'music';
 const MUSIC_EXTENSIONS = new Set(['mp3', 'wav', 'ogg', 'm4a']);
 const MUSIC_FALLBACK_FILES = ['music/TavernMusic.mp3'];
+const HOW_TO_PLAY_ITEMS = [
+  {
+    title: 'Campaign Story',
+    body: "It's your story, go wild! You can tell the anything. You can quote your player, make them do something, make it your own.",
+  },
+  {
+    title: 'Left Menu',
+    body: 'On the left, you can see a bunch of menus. It is all the information you need along your journey.',
+  },
+  {
+    title: 'Skill Check',
+    body: 'Occasionally, the Dungeon Master would ask you to roll a dice (e.g., roll d20). You need to roll a dice and the result will be sent towards the DM. You can also ask the DM for a skill check (e.g., Do a perception check).',
+  },
+  {
+    title: 'Quests',
+    body: 'Quests, Bounties, and Rumors will automatically triggers if you do the something, it will also be completed with the right move.',
+  },
+  {
+    title: 'NPCs',
+    body: 'You will encounter a lot of NPCs along you campaign, their presence will be recorded in the NPC tab.',
+  },
+  {
+    title: 'Item / spell casting',
+    body: 'You can mention your items, spells, or potion into the chat, It will link up that thing into your story.',
+  },
+];
 
 const EMPTY_EQUIPPED = {
   weapons: [null, null],
@@ -1607,6 +1633,7 @@ export default function Campaign() {
   const [musicVolume, setMusicVolume] = useState(0.35);
   const [musicError, setMusicError] = useState('');
   const [musicLoading, setMusicLoading] = useState(true);
+  const [showHowToPlay, setShowHowToPlay] = useState(false);
   const [rolls, setRolls] = useState([]);
   const [leftTab, setLeftTab] = useState(1);
   const [logTab, setLogTab] = useState('quests');
@@ -4475,9 +4502,13 @@ export default function Campaign() {
                 </span>
                 <span className="text-sky-300/70">{levelLabel}</span>
               </div>
-              <div className="rounded-full border border-[rgba(214,179,106,0.6)] px-3 py-1 text-[0.75rem] uppercase tracking-[0.12em]">
-                Live Session
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowHowToPlay(true)}
+                className="rounded-full border border-[rgba(214,179,106,0.6)] px-3 py-1 text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--accent)] transition hover:-translate-y-0.5"
+              >
+                How to play
+              </button>
             </div>
           </header>
 
@@ -4607,6 +4638,46 @@ export default function Campaign() {
           >
             {uidCopied ? 'Copied' : 'Copy'}
           </button>
+        </div>
+      ) : null}
+      {showHowToPlay ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center px-4 py-6">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/70"
+            onClick={() => setShowHowToPlay(false)}
+            aria-label="Close how to play"
+          />
+          <div className="relative w-full max-w-[560px] rounded-2xl border border-white/10 bg-[rgba(8,10,16,0.95)] p-5 shadow-[0_28px_70px_rgba(2,6,18,0.7)]">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <h3 className="m-0 text-lg text-[var(--ink)]">How to play</h3>
+                <p className="m-0 text-xs uppercase tracking-[0.2em] text-[var(--soft)]">
+                  Quick guide
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHowToPlay(false)}
+                className="rounded-full border border-white/20 px-3 py-1 text-[0.65rem] font-semibold uppercase tracking-[0.18em] text-[var(--ink)] transition hover:-translate-y-0.5 hover:border-white/40"
+              >
+                Close
+              </button>
+            </div>
+            <div className="mt-4 grid max-h-[60vh] gap-3 overflow-y-auto pr-1 text-sm text-[var(--soft)]">
+              {HOW_TO_PLAY_ITEMS.map((item, index) => (
+                <div
+                  key={item.title}
+                  className="rounded-xl border border-white/10 bg-[rgba(12,16,24,0.7)] px-4 py-3"
+                >
+                  <div className="text-[0.7rem] font-semibold uppercase tracking-[0.16em] text-[var(--ink)]">
+                    {index + 1}. {item.title}
+                  </div>
+                  <p className="m-0 mt-2 text-sm text-[var(--soft)]">{item.body}</p>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       ) : null}
       <audio ref={audioRef} preload="none" className="hidden" />
