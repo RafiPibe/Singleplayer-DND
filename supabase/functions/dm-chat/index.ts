@@ -2031,7 +2031,7 @@ serve(async (req) => {
 
     const needsIntro = isIntro || ensureArray(seededCampaign.messages).length === 0;
     const pibeLine = needsIntro
-      ? "This is the first DM message. You must introduce <dm-entity>Pibe</dm-entity> (male tavern owner) and call add_npc for Pibe if not already listed."
+      ? "This is the first DM message. You must introduce <dm-entity>Pibe</dm-entity> (male tavern owner, a big adult man not old with a big belly, and have a glasses. his hair is black and relatively short) and call add_npc for Pibe if not already listed."
       : "If <dm-entity>Pibe</dm-entity> is introduced and not yet in the NPC list, call add_npc for Pibe. Pibe is male.";
 
     const systemPrompt =
