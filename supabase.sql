@@ -21,6 +21,7 @@ create table if not exists public.campaigns (
   reputation jsonb not null,
   hp integer not null,
   hp_current integer,
+  pending_hp jsonb not null default '[]'::jsonb,
   backstory text not null,
   messages jsonb not null default '[]'::jsonb,
   quests jsonb not null default '[]'::jsonb,
@@ -33,6 +34,7 @@ create table if not exists public.campaigns (
   npcs jsonb not null default '[]'::jsonb,
   ossuary jsonb not null default '[]'::jsonb,
   spellbook jsonb not null default '[]'::jsonb,
+  current_location text not null default 'Pibe''s Tavern | Common room | Night',
   access_key text not null default lpad((floor(random() * 1000000000))::text, 9, '0') unique,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -51,6 +53,7 @@ alter table public.campaigns add column if not exists save_proficiencies jsonb n
 alter table public.campaigns add column if not exists level integer not null default 1;
 alter table public.campaigns add column if not exists level_xp integer not null default 0;
 alter table public.campaigns add column if not exists hp_current integer;
+alter table public.campaigns add column if not exists pending_hp jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists buffs jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists messages jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists quests jsonb not null default '[]'::jsonb;
@@ -62,6 +65,7 @@ alter table public.campaigns add column if not exists journal jsonb not null def
 alter table public.campaigns add column if not exists npcs jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists ossuary jsonb not null default '[]'::jsonb;
 alter table public.campaigns add column if not exists spellbook jsonb not null default '[]'::jsonb;
+alter table public.campaigns add column if not exists current_location text not null default 'Pibe''s Tavern | Common room | Night';
 alter table public.campaigns add column if not exists access_key text;
 
 update public.campaigns
@@ -96,22 +100,22 @@ begin
 
     loop
       req := case
-        when lvl <= 1 then 2
-        when lvl <= 3 then 3
-        when lvl <= 5 then 4
-        when lvl <= 7 then 5
-        when lvl <= 9 then 6
-        when lvl <= 11 then 7
-        when lvl <= 13 then 8
-        when lvl <= 15 then 10
-        when lvl <= 17 then 12
-        when lvl <= 19 then 14
-        when lvl <= 21 then 18
-        when lvl <= 23 then 22
-        when lvl <= 25 then 28
-        when lvl <= 27 then 34
-        when lvl <= 29 then 42
-        else 50
+        when lvl <= 1 then 50
+        when lvl <= 3 then 55
+        when lvl <= 5 then 100
+        when lvl <= 7 then 200
+        when lvl <= 9 then 300
+        when lvl <= 11 then 400
+        when lvl <= 13 then 500
+        when lvl <= 15 then 600
+        when lvl <= 17 then 800
+        when lvl <= 19 then 1000
+        when lvl <= 21 then 1200
+        when lvl <= 23 then 1600
+        when lvl <= 25 then 2000
+        when lvl <= 27 then 2400
+        when lvl <= 29 then 2800
+        else 5000
       end;
       exit when lvl >= 30 or remaining < req;
       remaining := remaining - req;

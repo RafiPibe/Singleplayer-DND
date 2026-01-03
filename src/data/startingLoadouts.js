@@ -3,7 +3,12 @@ const makeId = (prefix) =>
 
 const BASE_INVENTORY = {
   summary: {
-    crowns: 0,
+    crowns: {
+      platinum: 0,
+      gold: 0,
+      silver: 0,
+      copper: 50,
+    },
     ac: 0,
     damage: '',
     weaponType: '',

@@ -132,9 +132,78 @@ const DEFAULT_ITEM_BASES = [
   { name: "Weathered Satchel", description: "Stitched leather with a forgotten crest." },
 ];
 
+const COPPER_PER_SILVER = 100;
+const COPPER_PER_GOLD = 100 * COPPER_PER_SILVER;
+const COPPER_PER_PLATINUM = 100 * COPPER_PER_GOLD;
+
+const CLASS_HP_DICE: Record<string, number> = {
+  Artificer: 8,
+  Barbarian: 12,
+  Bard: 8,
+  Cleric: 8,
+  Druid: 8,
+  Fighter: 10,
+  Monk: 8,
+  Paladin: 10,
+  Ranger: 10,
+  Rogue: 8,
+  Sorcerer: 6,
+  Warlock: 8,
+  Wizard: 6,
+};
+
 const stripHtml = (value: unknown) => {
   if (!value) return "";
   return String(value).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+};
+
+const normalizeCrowns = (value: unknown) => {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const raw = value as Record<string, unknown>;
+    const platinum = Math.max(0, Math.floor(asNumber(raw.platinum)));
+    const gold = Math.max(0, Math.floor(asNumber(raw.gold)));
+    const silver = Math.max(0, Math.floor(asNumber(raw.silver)));
+    const copper = Math.max(0, Math.floor(asNumber(raw.copper)));
+    const totalCopper =
+      platinum * COPPER_PER_PLATINUM +
+      gold * COPPER_PER_GOLD +
+      silver * COPPER_PER_SILVER +
+      copper;
+    const nextPlatinum = Math.floor(totalCopper / COPPER_PER_PLATINUM);
+    const platinumRemainder = totalCopper - nextPlatinum * COPPER_PER_PLATINUM;
+    const nextGold = Math.floor(platinumRemainder / COPPER_PER_GOLD);
+    const goldRemainder = platinumRemainder - nextGold * COPPER_PER_GOLD;
+    const nextSilver = Math.floor(goldRemainder / COPPER_PER_SILVER);
+    const nextCopper = goldRemainder - nextSilver * COPPER_PER_SILVER;
+    return {
+      platinum: nextPlatinum,
+      gold: nextGold,
+      silver: nextSilver,
+      copper: nextCopper,
+    };
+  }
+  const legacyGold = Math.max(0, Math.floor(asNumber(value)));
+  return {
+    platinum: Math.floor(legacyGold / 100),
+    gold: legacyGold % 100,
+    silver: 0,
+    copper: 0,
+  };
+};
+
+const crownsToCopper = (value: unknown) => {
+  const crowns = normalizeCrowns(value);
+  return (
+    crowns.platinum * COPPER_PER_PLATINUM +
+    crowns.gold * COPPER_PER_GOLD +
+    crowns.silver * COPPER_PER_SILVER +
+    crowns.copper
+  );
+};
+
+const formatCrowns = (value: unknown) => {
+  const crowns = normalizeCrowns(value);
+  return `${crowns.platinum}p ${crowns.gold}g ${crowns.silver}s ${crowns.copper}c`;
 };
 
 const TOOL_LEAK_PATTERNS = [
@@ -159,13 +228,17 @@ const TOOL_LEAK_PATTERNS = [
   /\bupdate_reputation\s*\(/i,
   /\badjust_xp\s*\(/i,
   /\badjust_hp\s*\(/i,
+  /\badjust_crowns\s*\(/i,
+  /\bresolve_level_hp\s*\(/i,
+  /\bupdate_location\s*\(/i,
   /\badd_journal_entry\s*\(/i,
   /\bupdate_journal_entry\s*\(/i,
 ];
 
 const scrubToolLeaks = (value: string) => {
   if (!value) return value;
-  const lines = value.split("\n");
+  const withoutFences = value.replace(/```[\s\S]*?```/g, "").trim();
+  const lines = withoutFences.split("\n");
   const filtered = lines.filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return true;
@@ -188,7 +261,7 @@ const normalizeInventory = (value: unknown) => {
 
   return {
     summary: {
-      crowns: asNumber((summary as any).crowns),
+      crowns: normalizeCrowns((summary as any).crowns),
       ac: asNumber((summary as any).ac),
       damage: (summary as any).damage ?? "",
       weaponType: (summary as any).weaponType ?? "",
@@ -220,16 +293,85 @@ const updateListItem = <T extends { id?: string }>(
   patch: Partial<T>
 ) => {
   return list.map((item) => {
+    const normalizedName = match.name ? normalizeName(match.name) : "";
+    const normalizedTitle = match.title ? normalizeName(match.title) : "";
     const isMatch =
       (match.id && item.id === match.id) ||
-      (match.name && (item as any).name === match.name) ||
-      (match.title && (item as any).title === match.title);
+      (match.name && normalizeName((item as any).name) === normalizedName) ||
+      (match.title && normalizeName((item as any).title) === normalizedTitle);
     return isMatch ? { ...item, ...patch } : item;
   });
 };
 
-const normalizeName = (value: unknown) => String(value ?? "").trim().toLowerCase();
+const sanitizeText = (value: unknown) => stripHtml(value ?? "");
+
+const dedupeByTitle = (list: any[]) => {
+  const seen = new Set<string>();
+  return list.filter((item) => {
+    const key = normalizeName(item?.title);
+    if (!key) return true;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const dedupeNpcs = (list: any[]) => {
+  const seen = new Map<string, any>();
+  list.forEach((npc) => {
+    const key = normalizeName(npc?.name);
+    if (!key) return;
+    const existing = seen.get(key);
+    if (!existing) {
+      seen.set(key, npc);
+      return;
+    }
+    const merged = {
+      ...existing,
+      ...npc,
+      name: existing?.name || npc?.name,
+      role: npc?.role || existing?.role || "",
+      summary: npc?.summary || existing?.summary || "",
+      gender: npc?.gender || existing?.gender || "",
+      lastSeen: npc?.lastSeen || existing?.lastSeen || "",
+      reputation: Number.isFinite(npc?.reputation)
+        ? clampNpcReputation(npc.reputation, existing?.reputation ?? 0)
+        : clampNpcReputation(existing?.reputation, 0),
+      feeling: npc?.feeling || existing?.feeling || "",
+    };
+    seen.set(key, merged);
+  });
+  return Array.from(seen.values());
+};
+
+const removeRumorByTitle = (rumors: any[], title: string) => {
+  const key = normalizeName(title);
+  if (!key) return rumors;
+  return rumors.filter((rumor) => normalizeName(rumor?.title) !== key);
+};
+
+const normalizeName = (value: unknown) => stripHtml(value).trim().toLowerCase();
 const isPibe = (value: unknown) => normalizeName(value) === "pibe";
+
+const getClassKey = (value: unknown) => String(value ?? "").replace(/\s*\(.+\)\s*$/, "").trim();
+
+const getHpGainPerLevel = (className: unknown) => {
+  const key = getClassKey(className);
+  const die = CLASS_HP_DICE[key] ?? 8;
+  return Math.max(1, Math.ceil((die + 1) / 2));
+};
+
+const normalizePendingHp = (value: unknown, className: unknown) => {
+  const base = ensureArray(value);
+  return base
+    .map((entry: any) => {
+      const die = Math.max(1, asNumber(entry?.die, CLASS_HP_DICE[getClassKey(className)] ?? 8));
+      const average = Math.max(1, asNumber(entry?.average, Math.ceil((die + 1) / 2)));
+      const count = Math.max(1, Math.floor(asNumber(entry?.count, 1)));
+      return { die, average, count };
+    })
+    .filter((entry: any) => entry.count > 0);
+};
 
 const clampNpcReputation = (value: unknown, fallback = 0) => {
   const parsed = asNumber(value, fallback);
@@ -351,22 +493,22 @@ const scaleArmorAc = (baseAc: number, rarity: string, config: any) => {
 const getLevelRequirement = (level: number) => {
   const value = Math.max(1, Math.floor(level));
   if (value >= MAX_LEVEL) return null;
-  if (value <= 1) return 2;
-  if (value <= 3) return 3;
-  if (value <= 5) return 4;
-  if (value <= 7) return 5;
-  if (value <= 9) return 6;
-  if (value <= 11) return 7;
-  if (value <= 13) return 8;
-  if (value <= 15) return 10;
-  if (value <= 17) return 12;
-  if (value <= 19) return 14;
-  if (value <= 21) return 18;
-  if (value <= 23) return 22;
-  if (value <= 25) return 28;
-  if (value <= 27) return 34;
-  if (value <= 29) return 42;
-  return 50;
+  if (value <= 1) return 50;
+  if (value <= 3) return 55;
+  if (value <= 5) return 100;
+  if (value <= 7) return 200;
+  if (value <= 9) return 300;
+  if (value <= 11) return 400;
+  if (value <= 13) return 500;
+  if (value <= 15) return 600;
+  if (value <= 17) return 800;
+  if (value <= 19) return 1000;
+  if (value <= 21) return 1200;
+  if (value <= 23) return 1600;
+  if (value <= 25) return 2000;
+  if (value <= 27) return 2400;
+  if (value <= 29) return 2800;
+  return 5000;
 };
 
 const applyLevelProgress = (level: number, xp: number, amount: number) => {
@@ -414,6 +556,18 @@ const normalizeLevelProgress = (level: number, xp: number) => {
   };
 };
 
+const queueLevelHpGain = (campaign: any, gainedLevels: number) => {
+  if (!Number.isFinite(gainedLevels) || gainedLevels <= 0) return campaign;
+  const perLevel = getHpGainPerLevel(campaign?.class_name);
+  const die = CLASS_HP_DICE[getClassKey(campaign?.class_name)] ?? 8;
+  const pending = normalizePendingHp(campaign?.pending_hp, campaign?.class_name);
+  pending.push({ count: gainedLevels, die, average: perLevel });
+  return {
+    ...campaign,
+    pending_hp: pending,
+  };
+};
+
 const normalizeQuestStatus = (value: unknown) => String(value ?? "").trim().toLowerCase();
 const isQuestCompleted = (value: unknown) => {
   const status = normalizeQuestStatus(value);
@@ -452,6 +606,7 @@ const applyQuestRewards = (campaign: any) => {
     next.level_xp = updated.xp;
     const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
     next.skill_points = currentSkillPoints + updated.gainedLevels;
+    next = queueLevelHpGain(next, updated.gainedLevels);
   }
 
   return next;
@@ -805,6 +960,49 @@ const tools = [
   {
     type: "function",
     function: {
+      name: "adjust_crowns",
+      description: "Adjust inventory crowns by delta or set.",
+      parameters: {
+        type: "object",
+        properties: {
+          platinum: { type: "number" },
+          gold: { type: "number" },
+          silver: { type: "number" },
+          copper: { type: "number" },
+          set: {
+            type: "object",
+            properties: {
+              platinum: { type: "number" },
+              gold: { type: "number" },
+              silver: { type: "number" },
+              copper: { type: "number" },
+            },
+          },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "resolve_level_hp",
+      description: "Resolve pending level-up HP gain by average or roll results.",
+      parameters: {
+        type: "object",
+        properties: {
+          method: { type: "string", enum: ["average", "roll"] },
+          roll: { type: "number" },
+          rolls: { type: "array", items: { type: "number" } },
+          total: { type: "number" },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "add_journal_entry",
       description: "Add a journal entry.",
       parameters: {
@@ -1017,6 +1215,20 @@ const tools = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "update_location",
+      description: "Update the current location and time string for the campaign.",
+      parameters: {
+        type: "object",
+        properties: {
+          location: { type: "string" },
+        },
+        required: ["location"],
+      },
+    },
+  },
 ];
 
 const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
@@ -1031,7 +1243,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
   const handlers: Record<string, (args: any) => void> = {
     add_quest: (args) => {
       const quests = ensureArray(next.quests);
-      const title = String(args.title ?? "Untitled Quest").trim();
+      const title = sanitizeText(args.title ?? "Untitled Quest");
       if (title) {
         const exists = quests.some((quest: any) => normalizeName(quest?.title) === normalizeName(title));
         if (exists) return;
@@ -1040,11 +1252,12 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       quests.push({
         id: makeId("quest"),
         title: title || "Untitled Quest",
-        description: args.description ?? "",
-        status: args.status ?? "Active",
+        description: sanitizeText(args.description ?? ""),
+        status: sanitizeText(args.status ?? "Active") || "Active",
         xp: xpValue,
       });
-      next.quests = quests;
+      next.quests = dedupeByTitle(quests);
+      next.rumors = removeRumorByTitle(ensureArray(next.rumors), title || "");
     },
     update_quest: (args) => {
       const quests = ensureArray(next.quests);
@@ -1052,15 +1265,19 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       if (patch.xp !== undefined) {
         patch.xp = clamp(asNumber(patch.xp, QUEST_XP_DEFAULT), XP_MIN, XP_MAX);
       }
+      if (patch.title !== undefined) patch.title = sanitizeText(patch.title);
+      if (patch.description !== undefined) patch.description = sanitizeText(patch.description);
+      if (patch.status !== undefined) patch.status = sanitizeText(patch.status);
       const matchById = args.id;
-      const matchByTitle = args.title;
+      const matchByTitle = args.title ? sanitizeText(args.title) : "";
+      const matchTitleKey = matchByTitle ? normalizeName(matchByTitle) : "";
       let awardXp = 0;
       let shouldAward = false;
 
       const nextQuests = quests.map((quest: any) => {
         const isMatch =
           (matchById && quest.id === matchById) ||
-          (matchByTitle && quest.title === matchByTitle);
+          (matchByTitle && normalizeName(quest.title) === matchTitleKey);
         if (!isMatch) return quest;
         const prevStatus = quest.status;
         const nextStatus = patch.status ?? quest.status;
@@ -1079,7 +1296,11 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         return updated;
       });
 
-      next.quests = nextQuests;
+      next.quests = dedupeByTitle(nextQuests);
+      const questTitle = patch.title ?? nextQuests.find((quest: any) => quest.id === matchById)?.title ?? matchByTitle;
+      if (questTitle) {
+        next.rumors = removeRumorByTitle(ensureArray(next.rumors), questTitle);
+      }
 
       if (shouldAward && awardXp > 0) {
         const currentLevel = Math.max(1, asNumber(next.level, 1));
@@ -1089,6 +1310,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         next.level_xp = updated.xp;
         const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
         next.skill_points = currentSkillPoints + updated.gainedLevels;
+        next = queueLevelHpGain(next, updated.gainedLevels);
       }
     },
     add_bounty: (args) => {
@@ -1107,7 +1329,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
     },
     add_rumor: (args) => {
       const rumors = ensureArray(next.rumors);
-      const title = String(args.title ?? "Untitled Rumor").trim();
+      const title = sanitizeText(args.title ?? "Untitled Rumor");
       if (title) {
         const exists = rumors.some((rumor: any) => normalizeName(rumor?.title) === normalizeName(title));
         if (exists) return;
@@ -1116,12 +1338,12 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       rumors.push({
         id: makeId("rumor"),
         title: title || "Untitled Rumor",
-        summary: args.summary ?? "",
+        summary: sanitizeText(args.summary ?? ""),
         level: asNumber(args.level, 1),
         xp: xpValue,
-        notes: ensureArray(args.notes),
+        notes: ensureArray(args.notes).map((note: any) => sanitizeText(note)),
       });
-      next.rumors = rumors;
+      next.rumors = dedupeByTitle(rumors);
     },
     update_rumor: (args) => {
       const rumors = ensureArray(next.rumors);
@@ -1129,7 +1351,10 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       if (patch.xp !== undefined) {
         patch.xp = clamp(asNumber(patch.xp, RUMOR_XP_DEFAULT), XP_MIN, XP_MAX);
       }
-      next.rumors = updateListItem(rumors, { id: args.id, title: args.title }, patch);
+      if (patch.title !== undefined) patch.title = sanitizeText(patch.title);
+      if (patch.summary !== undefined) patch.summary = sanitizeText(patch.summary);
+      if (patch.notes !== undefined) patch.notes = ensureArray(patch.notes).map((note: any) => sanitizeText(note));
+      next.rumors = dedupeByTitle(updateListItem(rumors, { id: args.id, title: args.title }, patch));
     },
     update_reputation: (args) => {
       const rep = { ...ensureObject(next.reputation) } as Record<string, number>;
@@ -1163,17 +1388,80 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         next.level_xp = updated.xp;
         const currentSkillPoints = Math.max(0, asNumber(next.skill_points));
         next.skill_points = currentSkillPoints + updated.gainedLevels;
+        next = queueLevelHpGain(next, updated.gainedLevels);
       } else {
         next.level = currentLevel;
         next.level_xp = Math.max(0, targetXp);
       }
     },
     adjust_hp: (args) => {
-      const current = asNumber(next.hp_current);
+      const current = Number.isFinite(next.hp_current) ? Number(next.hp_current) : asNumber(next.hp, 20);
       const maxHp = Math.max(1, asNumber(next.hp, 20));
       const setValue = Number.isFinite(args.set) ? Number(args.set) : null;
       const nextValue = setValue === null ? current + asNumber(args.amount) : setValue;
       next.hp_current = clamp(nextValue, 0, maxHp);
+    },
+    adjust_crowns: (args) => {
+      const inventory = normalizeInventory(next.inventory);
+      const setValue =
+        args.set && typeof args.set === "object" && !Array.isArray(args.set) ? args.set : null;
+      if (setValue) {
+        inventory.summary.crowns = normalizeCrowns(setValue);
+      } else {
+        const currentCopper = crownsToCopper(inventory.summary.crowns);
+        const deltaCopper =
+          asNumber(args.copper) +
+          asNumber(args.silver) * COPPER_PER_SILVER +
+          asNumber(args.gold) * COPPER_PER_GOLD +
+          asNumber(args.platinum) * COPPER_PER_PLATINUM;
+        const nextCopper = Math.max(0, currentCopper + deltaCopper);
+        inventory.summary.crowns = normalizeCrowns({ copper: nextCopper });
+      }
+      next.inventory = inventory;
+    },
+    resolve_level_hp: (args) => {
+      const pending = normalizePendingHp(next.pending_hp, next.class_name);
+      if (!pending.length) return;
+      const entry = pending[0];
+      const method = String(args.method ?? "").toLowerCase();
+      let gain = 0;
+
+      if (method === "average") {
+        gain = entry.average * entry.count;
+      } else {
+        if (Array.isArray(args.rolls) && args.rolls.length) {
+          const rolls = args.rolls.slice(0, entry.count).map((value: any) => asNumber(value));
+          gain = rolls.reduce((sum, value) => sum + value, 0);
+          if (rolls.length < entry.count) {
+            gain += entry.average * (entry.count - rolls.length);
+          }
+        } else if (Number.isFinite(args.total)) {
+          gain = asNumber(args.total);
+        } else if (Number.isFinite(args.roll)) {
+          gain = asNumber(args.roll);
+          if (entry.count > 1) {
+            gain += entry.average * (entry.count - 1);
+          }
+        } else {
+          gain = entry.average * entry.count;
+        }
+      }
+
+      if (gain > 0) {
+        const currentMax = Math.max(1, asNumber(next.hp, 20));
+        const nextMax = currentMax + gain;
+        const current = Number.isFinite(next.hp_current) ? Number(next.hp_current) : currentMax;
+        next.hp = nextMax;
+        next.hp_current = clamp(current + gain, 0, nextMax);
+      }
+
+      pending.shift();
+      next.pending_hp = pending;
+    },
+    update_location: (args) => {
+      const location = sanitizeText(args.location ?? "");
+      if (!location) return;
+      next.current_location = location;
     },
     add_journal_entry: (args) => {
       const journal = ensureArray(next.journal);
@@ -1192,28 +1480,78 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
     },
     add_npc: (args) => {
       const npcs = ensureArray(next.npcs);
-      npcs.push({
+      const rawName = sanitizeText(args.name ?? "Unknown");
+      if (!rawName) return;
+      const npcPatch = {
         id: makeId("npc"),
-        name: args.name ?? "Unknown",
-        role: args.role ?? "",
-        summary: args.summary ?? "",
-        gender: isPibe(args.name) ? "Male" : args.gender ?? "",
-        lastSeen: args.lastSeen ?? "",
+        name: rawName || "Unknown",
+        role: sanitizeText(args.role ?? ""),
+        summary: sanitizeText(args.summary ?? ""),
+        gender: isPibe(rawName) ? "Male" : sanitizeText(args.gender ?? ""),
+        lastSeen: sanitizeText(args.lastSeen ?? ""),
         reputation: clampNpcReputation(args.reputation, 0),
-        feeling: args.feeling ?? "",
-      });
-      next.npcs = npcs;
+        feeling: sanitizeText(args.feeling ?? ""),
+      };
+      const index = npcs.findIndex((npc: any) => normalizeName(npc?.name) === normalizeName(rawName));
+      if (index >= 0) {
+        npcs[index] = {
+          ...npcPatch,
+          ...npcs[index],
+          ...npcPatch,
+          id: npcs[index]?.id ?? npcPatch.id,
+          gender: isPibe(rawName) ? "Male" : npcPatch.gender,
+          reputation: Number.isFinite(npcPatch.reputation)
+            ? npcPatch.reputation
+            : clampNpcReputation(npcs[index]?.reputation, 0),
+        };
+      } else {
+        npcs.push(npcPatch);
+      }
+      next.npcs = dedupeNpcs(npcs);
     },
     update_npc: (args) => {
       const npcs = ensureArray(next.npcs);
       const patch = { ...(args.patch ?? {}) };
+      if (patch.name !== undefined) patch.name = sanitizeText(patch.name);
+      if (patch.role !== undefined) patch.role = sanitizeText(patch.role);
+      if (patch.summary !== undefined) patch.summary = sanitizeText(patch.summary);
+      if (patch.gender !== undefined) patch.gender = sanitizeText(patch.gender);
+      if (patch.lastSeen !== undefined) patch.lastSeen = sanitizeText(patch.lastSeen);
+      if (patch.feeling !== undefined) patch.feeling = sanitizeText(patch.feeling);
       if (patch.reputation !== undefined) {
         patch.reputation = clampNpcReputation(patch.reputation, 0);
       }
-      if (isPibe(args.name)) {
+      if (isPibe(args.name ?? patch.name)) {
         patch.gender = "Male";
       }
-      next.npcs = updateListItem(npcs, { id: args.id, name: args.name }, patch);
+      const matchName = args.name ? sanitizeText(args.name) : patch.name;
+      const matchKey = matchName ? normalizeName(matchName) : "";
+      const index = args.id
+        ? npcs.findIndex((npc: any) => npc.id === args.id)
+        : npcs.findIndex((npc: any) => matchKey && normalizeName(npc?.name) === matchKey);
+      if (index >= 0) {
+        const updated = {
+          ...npcs[index],
+          ...patch,
+        };
+        updated.gender = isPibe(updated.name) ? "Male" : updated.gender ?? "";
+        if (updated.reputation !== undefined) {
+          updated.reputation = clampNpcReputation(updated.reputation, npcs[index]?.reputation ?? 0);
+        }
+        npcs[index] = updated;
+      } else if (matchName) {
+        npcs.push({
+          id: makeId("npc"),
+          name: matchName,
+          role: patch.role ?? "",
+          summary: patch.summary ?? "",
+          gender: isPibe(matchName) ? "Male" : patch.gender ?? "",
+          lastSeen: patch.lastSeen ?? "",
+          reputation: clampNpcReputation(patch.reputation, 0),
+          feeling: patch.feeling ?? "",
+        });
+      }
+      next.npcs = dedupeNpcs(npcs);
     },
     generate_loot: (args) => {
       const ossuary = ensureArray(next.ossuary);
@@ -1277,8 +1615,22 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       const section = ["weapons", "armor", "consumables", "misc"].includes(rawSection)
         ? rawSection
         : "misc";
-      const item = { id: makeId("item"), ...(args.item ?? {}) };
-      inventory.sections[section].push(item);
+      const rawItem = { ...(args.item ?? {}) };
+      const itemName = sanitizeText(rawItem.name ?? "");
+      const item = {
+        id: makeId("item"),
+        ...rawItem,
+        name: itemName || rawItem.name,
+        description: sanitizeText(rawItem.description ?? rawItem.note ?? ""),
+        note: sanitizeText(rawItem.note ?? ""),
+      };
+      const nameKey = itemName ? normalizeName(itemName) : "";
+      const exists = nameKey
+        ? inventory.sections[section].some((entry: any) => normalizeName(entry?.name) === nameKey)
+        : false;
+      if (!exists) {
+        inventory.sections[section].push(item);
+      }
       next.inventory = inventory;
     },
     consume_inventory_item: (args) => {
@@ -1327,7 +1679,29 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
     handlers[name](args);
   });
 
+  next.quests = dedupeByTitle(ensureArray(next.quests));
+  next.rumors = dedupeByTitle(ensureArray(next.rumors));
+  next.npcs = dedupeNpcs(ensureArray(next.npcs));
+
   return next;
+};
+
+const flattenSpellbook = (value: unknown) => {
+  if (!Array.isArray(value)) return [];
+  const flattened: any[] = [];
+  value.forEach((entry: any) => {
+    if (entry && Array.isArray(entry.spells)) {
+      entry.spells.forEach((spell: any) => {
+        flattened.push({
+          ...spell,
+          category: entry.label ?? spell.category ?? "",
+        });
+      });
+    } else if (entry) {
+      flattened.push(entry);
+    }
+  });
+  return flattened;
 };
 
 const buildContext = (campaign: any) => {
@@ -1347,7 +1721,8 @@ const buildContext = (campaign: any) => {
       detail: buff?.detail ?? "",
     }));
   const inventory = normalizeInventory(campaign.inventory);
-  const spellbook = ensureArray(campaign.spellbook)
+  const spellEntries = flattenSpellbook(campaign.spellbook ?? campaign.spells);
+  const spellbook = ensureArray(spellEntries)
     .slice(0, 12)
     .map((spell: any) => ({
       name: spell?.name ?? spell?.title ?? "",
@@ -1356,6 +1731,24 @@ const buildContext = (campaign: any) => {
       level: spell?.level ?? spell?.rank ?? 1,
       category: spell?.category ?? "",
     }));
+  const inventoryItems = {
+    weapons: ensureArray(inventory.sections?.weapons)
+      .map((item: any) => item?.name)
+      .filter(Boolean)
+      .slice(0, 6),
+    armor: ensureArray(inventory.sections?.armor)
+      .map((item: any) => item?.name)
+      .filter(Boolean)
+      .slice(0, 6),
+    consumables: ensureArray(inventory.sections?.consumables)
+      .map((item: any) => item?.name)
+      .filter(Boolean)
+      .slice(0, 6),
+    misc: ensureArray(inventory.sections?.misc)
+      .map((item: any) => item?.name)
+      .filter(Boolean)
+      .slice(0, 6),
+  };
   const ossuary = ensureArray(campaign.ossuary)
     .slice(0, 6)
     .map((item: any) => ({
@@ -1385,9 +1778,13 @@ const buildContext = (campaign: any) => {
     buffs,
     spellbook,
     ossuary,
+    pending_hp: normalizePendingHp(campaign.pending_hp, campaign.class_name),
+    current_location: campaign.current_location ?? DEFAULT_LOCATION,
     inventory: {
       summary: inventory.summary,
       equipped: inventory.equipped,
+      items: inventoryItems,
+      crowns: formatCrowns(inventory.summary.crowns),
     },
   };
 };
@@ -1424,7 +1821,7 @@ serve(async (req) => {
     const message = typeof payload?.message === "string" ? payload.message.trim() : "";
     const campaignId = payload?.campaignId ?? "";
     const accessKey = payload?.accessKey ?? "";
-    const location = payload?.location ?? DEFAULT_LOCATION;
+    const baseLocation = payload?.location ?? DEFAULT_LOCATION;
     const isIntro = Boolean(payload?.intro);
 
     console.log("dm-chat request", {
@@ -1516,13 +1913,21 @@ serve(async (req) => {
       "Never respond under 120 words unless the player explicitly requests brevity. " +
       "Include at least one spoken line in quotes when an NPC is present if possible and fit in the story. " +
       "Never show tool calls, function names, debug text, or code in the response. " +
+      "Never include JSON, code blocks, or serialized data in the response. " +
       "Do not mention UI or meta systems (quest log, rumor list, bounty board, XP totals, tool calls). " +
       "When a new quest or rumor emerges, present it as an in-world request, lead, or notice without labeling it. " +
       "Only mention XP or rewards if the player asks. " +
       "Wrap important names, items, spells, locations, and factions in <dm-entity> tags. " +
       "When the player attacks or uses a spell/weapon, instruct them to roll the correct dice based on equipped weapon damage (inventory.equipped.weapons) or spell roll, and mention any buff/potion modifiers from buffs. " +
+      "When you ask for any ability check, skill check, or saving throw, explicitly say to roll d20 and name the ability/skill; if unsure, default to roll d20. " +
       "If a buff grants a roll bonus (ex: +1d4), include it in the roll instruction. " +
+      "When the player casts a spell from their spellbook, acknowledge it and use its roll; if it heals or harms the player, call adjust_hp with the amount once the roll is known. " +
+      "If you describe the player taking damage or healing, call adjust_hp with the numeric change. " +
+      "If pending_hp is non-empty, the player has level-up HP to resolve; ask them to roll the class die (example: d8) or take the listed average, and call resolve_level_hp with their choice. " +
+      "When the scene shifts to a new place or time, call update_location with a short 'Place | Area | Time' string. " +
       "When loot appears, describe it in-world (no UI mentions) and call generate_loot with the item type so it is added to the ossuary. " +
+      "Use the player's backstory and appearance to seed fitting items; when relevant, call add_inventory_item and avoid duplicates already in inventory. " +
+      "When the player gains or spends money, call adjust_crowns to update their currency. " +
       "When adding NPCs, include their gender when known. " +
       "If an NPC asks the player to do something or a clear lead appears, call add_quest or add_rumor automatically. " +
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
@@ -1712,6 +2117,7 @@ serve(async (req) => {
       if (normalized.gainedLevels > 0) {
         const currentSkillPoints = Math.max(0, asNumber(updatedCampaign.skill_points));
         updatedCampaign.skill_points = currentSkillPoints + normalized.gainedLevels;
+        updatedCampaign = queueLevelHpGain(updatedCampaign, normalized.gainedLevels);
       }
     }
 
@@ -1760,10 +2166,11 @@ serve(async (req) => {
       dmText = introFallback;
     }
 
+    const dmLocation = updatedCampaign.current_location ?? baseLocation;
     const dmMessage = {
       id: makeId("dm"),
       sender: "Dungeon Master",
-      location,
+      location: dmLocation,
       content: dmText || "The tavern is quiet for a moment...",
     };
 
@@ -1773,7 +2180,7 @@ serve(async (req) => {
       const playerMessage = {
         id: makeId("player"),
         sender: campaign.name ?? "You",
-        location,
+        location: campaign.current_location ?? baseLocation,
         content: message,
       };
       updatedCampaign.messages = [...ensureArray(campaign.messages), playerMessage, dmMessage];
