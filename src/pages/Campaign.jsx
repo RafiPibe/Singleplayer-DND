@@ -184,7 +184,14 @@ const extractDmEntities = (text) => {
   return matches;
 };
 
-const renderMessageContent = (content) => {
+const normalizeEntityKey = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9\s'’\-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const renderMessageContent = (content, allowedEntities) => {
   if (!content) return null;
   const text = scrubToolLeaks(String(content));
   if (!text) return null;
@@ -194,13 +201,20 @@ const renderMessageContent = (content) => {
   let match;
 
   while ((match = regex.exec(text)) !== null) {
+    const entity = match[1]?.trim();
+    const shouldHighlight =
+      entity && allowedEntities?.size ? allowedEntities.has(normalizeEntityKey(entity)) : false;
     if (match.index > lastIndex) {
       output.push(text.slice(lastIndex, match.index));
     }
     output.push(
-      <span key={`dm-entity-${match.index}`} className="dm-entity">
-        {match[1]}
-      </span>
+      shouldHighlight ? (
+        <span key={`dm-entity-${match.index}`} className="dm-entity">
+          {entity}
+        </span>
+      ) : (
+        entity
+      )
     );
     lastIndex = regex.lastIndex;
   }
@@ -277,6 +291,25 @@ const parseDiceFromText = (value) => {
   const match = String(value ?? '').match(/(\d+)d(\d+)/i);
   if (!match) return null;
   return { count: Number(match[1]), sides: Number(match[2]) };
+};
+
+const extractDiceSides = (value) => {
+  const cleaned = stripHtml(value ?? '');
+  if (!cleaned) return [];
+  const sides = new Set();
+  const regex = /(\d+)d(\d+)/gi;
+  let match;
+  while ((match = regex.exec(cleaned)) !== null) {
+    const parsed = Number(match[2]);
+    if (Number.isFinite(parsed)) sides.add(parsed);
+  }
+  const loose = cleaned.match(/\bd(4|6|8|10|12|20|100)\b/gi) ?? [];
+  loose.forEach((entry) => {
+    const parsed = Number(entry.slice(1));
+    if (Number.isFinite(parsed)) sides.add(parsed);
+  });
+  const allowed = new Set([4, 6, 8, 10, 12, 20, 100]);
+  return Array.from(sides).filter((side) => allowed.has(side));
 };
 
 const parseDcFromText = (value) => {
@@ -1607,21 +1640,6 @@ export default function Campaign() {
     () => questLog.filter((quest) => isQuestCompletedStatus(quest?.status)),
     [questLog]
   );
-  const playerEntityHighlights = useMemo(() => {
-    const names = new Set();
-    npcList.forEach((npc) => {
-      const name = String(npc?.name ?? '').trim();
-      if (name) names.add(name);
-    });
-    messages.forEach((entry) => {
-      const sender = entry?.sender ?? '';
-      const isPlayer =
-        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
-      if (isPlayer) return;
-      extractDmEntities(entry?.content ?? '').forEach((entity) => names.add(entity));
-    });
-    return Array.from(names);
-  }, [messages, npcList, campaign]);
   const classKey = useMemo(() => {
     const raw = campaign?.class_name ?? '';
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
@@ -1643,6 +1661,51 @@ export default function Campaign() {
     if (Array.isArray(stored)) return stored;
     return CLASS_SPELLBOOKS[classKey] ?? DEFAULT_SPELLBOOK;
   }, [campaign, classKey]);
+  const entityHighlightList = useMemo(() => {
+    const names = new Map();
+    const addName = (value) => {
+      const key = normalizeEntityKey(value);
+      if (!key) return;
+      if (!names.has(key)) {
+        names.set(key, String(value).trim());
+      }
+    };
+
+    npcList.forEach((npc) => {
+      if (npc?.name) addName(npc.name);
+    });
+    questLog.forEach((quest) => {
+      if (quest?.title) addName(quest.title);
+    });
+    rumors.forEach((rumor) => {
+      if (rumor?.title) addName(rumor.title);
+    });
+    bounties.forEach((bounty) => {
+      if (bounty?.title) addName(bounty.title);
+    });
+    const inventory = normalizeInventory(inventoryData);
+    inventory.equipped.weapons.forEach((item) => {
+      if (item?.name) addName(item.name);
+    });
+    Object.values(inventory.equipped.armor).forEach((item) => {
+      if (item?.name) addName(item.name);
+    });
+    Object.values(inventory.sections).forEach((items) => {
+      (items ?? []).forEach((item) => {
+        if (item?.name) addName(item.name);
+      });
+    });
+    spellbook.forEach((category) => {
+      (category?.spells ?? []).forEach((spell) => {
+        if (spell?.name) addName(spell.name);
+      });
+    });
+    return Array.from(names.values());
+  }, [npcList, questLog, rumors, bounties, inventoryData, spellbook]);
+  const entityHighlightKeys = useMemo(
+    () => new Set(entityHighlightList.map((item) => normalizeEntityKey(item))),
+    [entityHighlightList]
+  );
   const showDiceTray = useMemo(() => {
     if (!messages.length) return false;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -1668,6 +1731,20 @@ export default function Campaign() {
     }
     return null;
   }, [messages, campaign, abilities, skillsByAbility]);
+  const allowedDiceSides = useMemo(() => {
+    if (!messages.length) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) continue;
+      if (!messageRequestsRoll(entry?.content ?? '')) continue;
+      const sides = extractDiceSides(entry?.content ?? '');
+      return sides.length ? sides : null;
+    }
+    return null;
+  }, [messages, campaign]);
 
   useEffect(() => {
     if (!spellbook.length) {
@@ -4053,8 +4130,8 @@ export default function Campaign() {
                     </div>
                     <p className="m-0 whitespace-pre-wrap break-words">
                       {isPlayer
-                        ? renderPlayerMessageContent(message.content, playerEntityHighlights)
-                        : renderMessageContent(message.content)}
+                        ? renderPlayerMessageContent(message.content, entityHighlightList)
+                        : renderMessageContent(message.content, entityHighlightKeys)}
                     </p>
                   </div>
                 </div>
@@ -4105,7 +4182,7 @@ export default function Campaign() {
             <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
               <h3 className="text-lg">Dice Tray</h3>
               <div className="my-4 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-2.5">
-                {[4, 6, 8, 10, 12, 20, 100].map((sides) => (
+                {(allowedDiceSides ?? [4, 6, 8, 10, 12, 20, 100]).map((sides) => (
                   <button
                     key={sides}
                     className="rounded-xl border border-white/20 bg-white/10 p-3 font-bold text-[var(--ink)] transition hover:-translate-y-0.5"

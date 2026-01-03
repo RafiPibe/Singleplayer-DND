@@ -2011,6 +2011,9 @@ serve(async (req) => {
     }
 
     const seededCampaign = seedBackstoryInventory(campaign);
+    const playerName = String(campaign.name ?? "").trim();
+    const playerNameLabel =
+      playerName && playerName.toLowerCase() !== "you" ? playerName : "the adventurer";
     const gameData = await loadGameData(supabase);
     const lootContext = {
       lootConfig: gameData.lootConfig,
@@ -2059,7 +2062,8 @@ serve(async (req) => {
       "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
       "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
       pibeLine +
-      " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state.";
+      " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state. " +
+      "End with a short question about what the player does next, phrased in third person using the player's name.";
 
     const context = buildContext(seededCampaign);
 
@@ -2068,7 +2072,7 @@ serve(async (req) => {
     const introPrompt =
       "Begin the campaign by greeting the player in Pibe's Tavern and introducing <dm-entity>Pibe</dm-entity>. " +
       "Write at least 140 words, split into 2-4 paragraphs, and include a line of dialogue in quotes. " +
-      "End with a short question about what the player does next.";
+      `End with a short question about what ${playerNameLabel} does next.`;
     const userPrompt = isIntro ? introPrompt : message;
 
     const contents = [
@@ -2256,7 +2260,7 @@ serve(async (req) => {
       "A courier brushes past, dropping a sealed note on the counter beside you, its wax still warm. " +
       "The hearth pops and throws a spark that lands at your feet like a warning.\n\n" +
       "Pibe sets the glass down and nods toward an empty table near the fire. " +
-      "\"Sit, warm up, and tell me what brings you to <dm-entity>Pibe's Tavern</dm-entity>.\" What do you do?";
+      `"Sit, warm up, and tell me what brings you to <dm-entity>Pibe's Tavern</dm-entity>." What does ${playerNameLabel} do?`;
 
     if (isIntro) {
       let npcs = ensureArray(updatedCampaign.npcs);
@@ -2282,7 +2286,7 @@ serve(async (req) => {
     } else if (countWords(dmText) > 0 && countWords(dmText) < 80) {
       dmText =
         `${dmText}\n\nThe atmosphere settles around you as the moment stretches on, inviting a choice. ` +
-        "You can press forward, ask for details, or change the scene entirely. What do you do?";
+        `You can press forward, ask for details, or change the scene entirely. What does ${playerNameLabel} do?`;
     }
 
     dmText = scrubToolLeaks(dmText || "");
