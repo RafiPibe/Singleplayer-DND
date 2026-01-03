@@ -27,6 +27,43 @@ const asOptionalNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const COPPER_PER_SILVER = 100;
+const COPPER_PER_GOLD = 100 * COPPER_PER_SILVER;
+const COPPER_PER_PLATINUM = 100 * COPPER_PER_GOLD;
+
+const normalizeCrowns = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const platinum = Math.max(0, Math.floor(Number(value.platinum) || 0));
+    const gold = Math.max(0, Math.floor(Number(value.gold) || 0));
+    const silver = Math.max(0, Math.floor(Number(value.silver) || 0));
+    const copper = Math.max(0, Math.floor(Number(value.copper) || 0));
+    const totalCopper =
+      platinum * COPPER_PER_PLATINUM +
+      gold * COPPER_PER_GOLD +
+      silver * COPPER_PER_SILVER +
+      copper;
+    const nextPlatinum = Math.floor(totalCopper / COPPER_PER_PLATINUM);
+    const platinumRemainder = totalCopper - nextPlatinum * COPPER_PER_PLATINUM;
+    const nextGold = Math.floor(platinumRemainder / COPPER_PER_GOLD);
+    const goldRemainder = platinumRemainder - nextGold * COPPER_PER_GOLD;
+    const nextSilver = Math.floor(goldRemainder / COPPER_PER_SILVER);
+    const nextCopper = goldRemainder - nextSilver * COPPER_PER_SILVER;
+    return {
+      platinum: nextPlatinum,
+      gold: nextGold,
+      silver: nextSilver,
+      copper: nextCopper,
+    };
+  }
+  const legacyGold = Math.max(0, Math.floor(Number(value) || 0));
+  return {
+    platinum: Math.floor(legacyGold / 100),
+    gold: legacyGold % 100,
+    silver: 0,
+    copper: 0,
+  };
+};
+
 const safeParseJson = (value) => {
   try {
     return { ok: true, value: JSON.parse(value) };
@@ -57,7 +94,12 @@ const EMPTY_EQUIPPED = {
 
 const EMPTY_INVENTORY = {
   summary: {
-    crowns: 0,
+    crowns: {
+      platinum: 0,
+      gold: 0,
+      silver: 0,
+      copper: 50,
+    },
     ac: 0,
     damage: '',
     weaponType: '',
@@ -78,6 +120,7 @@ const normalizeInventory = (inventory) => {
     summary: {
       ...EMPTY_INVENTORY.summary,
       ...(base.summary ?? {}),
+      crowns: normalizeCrowns(base?.summary?.crowns),
     },
     equipped: {
       weapons: Array.isArray(base?.equipped?.weapons)
@@ -462,6 +505,10 @@ const InventoryEditor = ({ value, onChange }) => {
     });
   };
 
+  const updateCrowns = (key, nextValue) => {
+    updateSummary('crowns', normalizeCrowns({ ...(inventory.summary.crowns ?? {}), [key]: nextValue }));
+  };
+
   const updateEquippedWeapon = (slotIndex, patch) => {
     const nextWeapons = [...inventory.equipped.weapons];
     if (patch === null) {
@@ -547,15 +594,47 @@ const InventoryEditor = ({ value, onChange }) => {
           Summary
         </div>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1 text-xs">
+          <div className="grid gap-2 text-xs md:col-span-2">
             <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Crowns</span>
-            <input
-              type="number"
-              className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
-              value={inventory.summary.crowns ?? 0}
-              onChange={(event) => updateSummary('crowns', asNumber(event.target.value))}
-            />
-          </label>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Platinum</span>
+                <input
+                  type="number"
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={inventory.summary.crowns?.platinum ?? 0}
+                  onChange={(event) => updateCrowns('platinum', asNumber(event.target.value))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Gold</span>
+                <input
+                  type="number"
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={inventory.summary.crowns?.gold ?? 0}
+                  onChange={(event) => updateCrowns('gold', asNumber(event.target.value))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Silver</span>
+                <input
+                  type="number"
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={inventory.summary.crowns?.silver ?? 0}
+                  onChange={(event) => updateCrowns('silver', asNumber(event.target.value))}
+                />
+              </label>
+              <label className="grid gap-1 text-xs">
+                <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Copper</span>
+                <input
+                  type="number"
+                  className="rounded-xl border border-white/15 bg-[rgba(6,8,13,0.7)] px-3 py-2 text-xs text-[var(--ink)] focus:border-[rgba(214,179,106,0.6)] focus:outline-none"
+                  value={inventory.summary.crowns?.copper ?? 0}
+                  onChange={(event) => updateCrowns('copper', asNumber(event.target.value))}
+                />
+              </label>
+            </div>
+          </div>
           <label className="grid gap-1 text-xs">
             <span className="uppercase tracking-[0.16em] text-[var(--soft)]">Base AC</span>
             <input

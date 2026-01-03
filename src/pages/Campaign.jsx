@@ -13,6 +13,10 @@ const isUuid = (value) =>
     value ?? ''
   );
 
+const COPPER_PER_SILVER = 100;
+const COPPER_PER_GOLD = 100 * COPPER_PER_SILVER;
+const COPPER_PER_PLATINUM = 100 * COPPER_PER_GOLD;
+
 const sampleQuests = [];
 const sampleBounties = [];
 const sampleRumors = [];
@@ -30,7 +34,12 @@ const EMPTY_EQUIPPED = {
 
 const EMPTY_INVENTORY = {
   summary: {
-    crowns: 0,
+    crowns: {
+      platinum: 0,
+      gold: 0,
+      silver: 0,
+      copper: 0,
+    },
     ac: 0,
     damage: '',
     weaponType: '',
@@ -51,6 +60,7 @@ const normalizeInventory = (inventory) => {
     summary: {
       ...EMPTY_INVENTORY.summary,
       ...(base.summary ?? {}),
+      crowns: normalizeCrowns(base?.summary?.crowns),
     },
     equipped: {
       weapons: Array.isArray(base?.equipped?.weapons)
@@ -75,6 +85,44 @@ const stripHtml = (value) => {
   return String(value).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 };
 
+const normalizeCrowns = (value) => {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const platinum = Math.max(0, Math.floor(Number(value.platinum) || 0));
+    const gold = Math.max(0, Math.floor(Number(value.gold) || 0));
+    const silver = Math.max(0, Math.floor(Number(value.silver) || 0));
+    const copper = Math.max(0, Math.floor(Number(value.copper) || 0));
+    const totalCopper =
+      platinum * COPPER_PER_PLATINUM +
+      gold * COPPER_PER_GOLD +
+      silver * COPPER_PER_SILVER +
+      copper;
+    const nextPlatinum = Math.floor(totalCopper / COPPER_PER_PLATINUM);
+    const platinumRemainder = totalCopper - nextPlatinum * COPPER_PER_PLATINUM;
+    const nextGold = Math.floor(platinumRemainder / COPPER_PER_GOLD);
+    const goldRemainder = platinumRemainder - nextGold * COPPER_PER_GOLD;
+    const nextSilver = Math.floor(goldRemainder / COPPER_PER_SILVER);
+    const nextCopper = goldRemainder - nextSilver * COPPER_PER_SILVER;
+    return {
+      platinum: nextPlatinum,
+      gold: nextGold,
+      silver: nextSilver,
+      copper: nextCopper,
+    };
+  }
+  const legacyGold = Math.max(0, Math.floor(Number(value) || 0));
+  return {
+    platinum: Math.floor(legacyGold / 100),
+    gold: legacyGold % 100,
+    silver: 0,
+    copper: 0,
+  };
+};
+
+const formatCrowns = (value) => {
+  const crowns = normalizeCrowns(value);
+  return `${crowns.platinum}p ${crowns.gold}g ${crowns.silver}s ${crowns.copper}c`;
+};
+
 const TOOL_LEAK_PATTERNS = [
   /\bdefault_api\b/i,
   /\bfunction_call\b/i,
@@ -97,13 +145,17 @@ const TOOL_LEAK_PATTERNS = [
   /\bupdate_reputation\s*\(/i,
   /\badjust_xp\s*\(/i,
   /\badjust_hp\s*\(/i,
+  /\badjust_crowns\s*\(/i,
+  /\bresolve_level_hp\s*\(/i,
+  /\bupdate_location\s*\(/i,
   /\badd_journal_entry\s*\(/i,
   /\bupdate_journal_entry\s*\(/i,
 ];
 
 const scrubToolLeaks = (value) => {
   if (!value) return value;
-  const lines = String(value).split('\n');
+  const withoutFences = String(value).replace(/```[\s\S]*?```/g, '').trim();
+  const lines = withoutFences.split('\n');
   const filtered = lines.filter((line) => {
     const trimmed = line.trim();
     if (!trimmed) return true;
@@ -355,16 +407,6 @@ const buildMapFromKeys = (keys, initialValue = 0) => {
   });
   return base;
 };
-
-const sampleJournalEntries = [
-  {
-    id: 'jrnl-1',
-    title: 'River Crest Letter',
-    category: 'Quest',
-    content: 'The courier left a letter with a river crest. Something about a creator in the docks.',
-    createdAt: new Date().toISOString(),
-  },
-];
 
 const EMPTY_OSSUARY = [];
 
@@ -990,8 +1032,70 @@ const SAVE_PROFICIENCIES = {
   Wizard: ['Intelligence', 'Wisdom'],
 };
 
+const CLASS_HP_DICE = {
+  Artificer: 8,
+  Barbarian: 12,
+  Bard: 8,
+  Cleric: 8,
+  Druid: 8,
+  Fighter: 10,
+  Monk: 8,
+  Paladin: 10,
+  Ranger: 10,
+  Rogue: 8,
+  Sorcerer: 6,
+  Warlock: 8,
+  Wizard: 6,
+};
+
 const SAVE_PROFICIENCY_BONUS = 2;
-const getLevelRequirement = (level) => getAbilityRequirement(level);
+const getHpGainPerLevel = (className) => {
+  const key = String(className ?? '').replace(/\s*\(.+\)\s*$/, '').trim();
+  const die = CLASS_HP_DICE[key] ?? 8;
+  return Math.max(1, Math.ceil((die + 1) / 2));
+};
+
+const normalizePendingHp = (value, className) => {
+  if (!Array.isArray(value)) return [];
+  const key = String(className ?? '').replace(/\s*\(.+\)\s*$/, '').trim();
+  const defaultDie = CLASS_HP_DICE[key] ?? 8;
+  return value
+    .map((entry) => {
+      const die = Math.max(1, Number(entry?.die ?? defaultDie) || defaultDie);
+      const average = Math.max(1, Number(entry?.average ?? Math.ceil((die + 1) / 2)));
+      const count = Math.max(1, Math.floor(Number(entry?.count ?? 1) || 1));
+      return { die, average, count };
+    })
+    .filter((entry) => entry.count > 0);
+};
+
+const queuePendingHp = (pending, className, gainedLevels) => {
+  if (!Number.isFinite(gainedLevels) || gainedLevels <= 0) return pending;
+  const key = String(className ?? '').replace(/\s*\(.+\)\s*$/, '').trim();
+  const die = CLASS_HP_DICE[key] ?? 8;
+  const average = getHpGainPerLevel(className);
+  return [...pending, { die, average, count: gainedLevels }];
+};
+const getLevelRequirement = (level) => {
+  const value = Math.max(1, Math.floor(Number.isFinite(level) ? level : 1));
+  if (value >= 30) return null;
+  if (value <= 1) return 50;
+  if (value <= 3) return 55;
+  if (value <= 5) return 100;
+  if (value <= 7) return 200;
+  if (value <= 9) return 300;
+  if (value <= 11) return 400;
+  if (value <= 13) return 500;
+  if (value <= 15) return 600;
+  if (value <= 17) return 800;
+  if (value <= 19) return 1000;
+  if (value <= 21) return 1200;
+  if (value <= 23) return 1600;
+  if (value <= 25) return 2000;
+  if (value <= 27) return 2400;
+  if (value <= 29) return 2800;
+  return 5000;
+};
 
 const SPELL_CATEGORY_ICONS = {
   Healing: (
@@ -1277,9 +1381,7 @@ export default function Campaign() {
   const [showCompletedQuests, setShowCompletedQuests] = useState(false);
   const [inventoryTab, setInventoryTab] = useState('inventory');
   const [rumors, setRumors] = useState([]);
-  const [journalEntries, setJournalEntries] = useState(() =>
-    normalizeJournalEntries(sampleJournalEntries)
-  );
+  const [journalEntries, setJournalEntries] = useState(() => []);
   const [journalQuery, setJournalQuery] = useState('');
   const [journalFilter, setJournalFilter] = useState('All');
   const [journalMode, setJournalMode] = useState('list');
@@ -1359,7 +1461,7 @@ export default function Campaign() {
     if (Array.isArray(data.journal) && data.journal.length) {
       setJournalEntries(normalizeJournalEntries(data.journal));
     } else {
-      setJournalEntries(normalizeJournalEntries(sampleJournalEntries));
+      setJournalEntries([]);
     }
     if (data.inventory && !Array.isArray(data.inventory)) {
       setInventoryData(normalizeInventory(data.inventory));
@@ -1429,7 +1531,7 @@ export default function Campaign() {
             campaignId: campaign.id,
             accessKey: campaign.access_key,
             intro: true,
-            location: SAMPLE_LOCATION,
+            location: campaign?.current_location ?? SAMPLE_LOCATION,
           },
         });
 
@@ -1763,7 +1865,7 @@ export default function Campaign() {
     const entry = {
       id: `player-${Date.now()}`,
       sender: campaign.name || 'You',
-      location: SAMPLE_LOCATION,
+      location: campaign?.current_location ?? SAMPLE_LOCATION,
       content: trimmed,
     };
     setMessages((prev) => [...prev, entry]);
@@ -1779,7 +1881,7 @@ export default function Campaign() {
           campaignId: campaign.id,
           accessKey: campaign.access_key,
           message: trimmed,
-          location: SAMPLE_LOCATION,
+          location: campaign?.current_location ?? SAMPLE_LOCATION,
         },
       });
 
@@ -2294,6 +2396,9 @@ export default function Campaign() {
     };
   };
 
+  const applyLevelHpGain = (pending, gainedLevels) =>
+    queuePendingHp(pending, classKey, gainedLevels);
+
   const handleSpendSkillPoint = async (ability) => {
     if (skillPoints <= 0) return;
     const currentScore = abilityScoresByName[ability] ?? 10;
@@ -2366,6 +2471,9 @@ export default function Campaign() {
     let nextSkillPoints = skillPoints;
     let nextPlayerLevel = playerLevel;
     let nextPlayerXp = playerXp;
+    let nextMaxHp = hpMax;
+    let nextCurrentHp = nextHp;
+    let nextPendingHp = normalizePendingHp(campaign?.pending_hp, classKey);
 
     if (abilityTarget && abilities.includes(abilityTarget)) {
       if (Number.isFinite(abilityScoreBoost)) {
@@ -2443,10 +2551,11 @@ export default function Campaign() {
       nextPlayerXp = updated.xp;
       if (updated.gainedLevels) {
         nextSkillPoints += updated.gainedLevels;
+        nextPendingHp = applyLevelHpGain(nextPendingHp, updated.gainedLevels);
       }
     }
 
-    setHpCurrent(nextHp);
+    setHpCurrent(nextCurrentHp);
     setInventoryData(nextInventory);
     setActiveBuffs(nextBuffs);
     setAbilityScores(nextAbilityScores);
@@ -2456,9 +2565,11 @@ export default function Campaign() {
     setSkillPoints(nextSkillPoints);
     setPlayerLevel(nextPlayerLevel);
     setPlayerXp(nextPlayerXp);
+    setCampaign((prev) => (prev ? { ...prev, hp: nextMaxHp, pending_hp: nextPendingHp } : prev));
     await savePatch({
       inventory: nextInventory,
-      hp_current: nextHp,
+      hp: nextMaxHp,
+      hp_current: nextCurrentHp,
       buffs: nextBuffs,
       stats: nextAbilityScores,
       ability_scores: nextAbilityScores,
@@ -2468,6 +2579,7 @@ export default function Campaign() {
       skill_points: nextSkillPoints,
       level: nextPlayerLevel,
       level_xp: nextPlayerXp,
+      pending_hp: nextPendingHp,
     });
   };
 
@@ -2568,6 +2680,7 @@ export default function Campaign() {
     Rare: 'border-sky-400/40 text-sky-300',
     Epic: 'border-purple-400/40 text-purple-300',
     Legendary: 'border-amber-400/60 text-amber-300',
+    Unique: 'border-rose-400/50 text-rose-300',
     Divine: 'border-blue-300/60 text-blue-200',
     Hellforged: 'border-red-400/60 text-red-300',
   };
@@ -2663,11 +2776,11 @@ export default function Campaign() {
                           <details className="group" open>
                             <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                               <div className="grid gap-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="font-semibold">{quest.title}</span>
-                                  <span className="text-[var(--soft)] transition group-open:rotate-180">
-                                    <svg
-                                      viewBox="0 0 24 24"
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="font-semibold">{stripHtml(quest.title)}</span>
+                                    <span className="text-[var(--soft)] transition group-open:rotate-180">
+                                      <svg
+                                        viewBox="0 0 24 24"
                                       className="h-4 w-4"
                                       fill="none"
                                       stroke="currentColor"
@@ -2683,7 +2796,7 @@ export default function Campaign() {
                               </div>
                             </summary>
                             <div className="mt-2 grid gap-1.5">
-                              <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
+                              <p className="m-0 text-sm text-[var(--soft)]">{stripHtml(quest.description)}</p>
                               <span className="text-sm font-semibold text-[var(--accent)]">{quest.xp} XP</span>
                             </div>
                           </details>
@@ -2725,7 +2838,7 @@ export default function Campaign() {
                                 <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                                   <div className="grid gap-1">
                                     <div className="flex items-center justify-between gap-2">
-                                      <span className="font-semibold">{quest.title}</span>
+                                      <span className="font-semibold">{stripHtml(quest.title)}</span>
                                       <span className="text-[var(--soft)] transition group-open:rotate-180">
                                         <svg
                                           viewBox="0 0 24 24"
@@ -2743,11 +2856,11 @@ export default function Campaign() {
                                     </span>
                                   </div>
                                 </summary>
-                                <div className="mt-2 grid gap-1.5">
-                                  <p className="m-0 text-sm text-[var(--soft)]">{quest.description}</p>
-                                  <span className="text-sm font-semibold text-[var(--accent)]">
-                                    {quest.xp} XP
-                                  </span>
+                              <div className="mt-2 grid gap-1.5">
+                                  <p className="m-0 text-sm text-[var(--soft)]">{stripHtml(quest.description)}</p>
+                                <span className="text-sm font-semibold text-[var(--accent)]">
+                                  {quest.xp} XP
+                                </span>
                                 </div>
                               </details>
                             </div>
@@ -2784,7 +2897,7 @@ export default function Campaign() {
                           <details className="group" open>
                             <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
                               <div className="flex items-center justify-between gap-2">
-                                <span className="font-semibold">{rumor.title}</span>
+                                <span className="font-semibold">{stripHtml(rumor.title)}</span>
                                 <span className="text-[var(--soft)] transition group-open:rotate-180">
                                   <svg
                                     viewBox="0 0 24 24"
@@ -2807,11 +2920,11 @@ export default function Campaign() {
                               </div>
                             </summary>
                             <div className="mt-2 grid gap-2">
-                              <p className="m-0 text-sm text-[var(--soft)]">{rumor.summary}</p>
+                              <p className="m-0 text-sm text-[var(--soft)]">{stripHtml(rumor.summary)}</p>
                               {rumor.notes?.length ? (
                                 <ul className="m-0 list-disc pl-5 text-xs text-[var(--soft)]">
                                   {rumor.notes.map((note) => (
-                                    <li key={note}>{note}</li>
+                                    <li key={note}>{stripHtml(note)}</li>
                                   ))}
                                 </ul>
                               ) : null}
@@ -3167,6 +3280,7 @@ export default function Campaign() {
                           const buffPrimary = activeBuffs[0];
                           const buffValue = buffPrimary?.name ?? 'None';
                           const buffDetail = buffPrimary?.detail ?? 'No active effects';
+                          const crownsValue = formatCrowns(inventoryData?.summary?.crowns);
                           const summaryCards = [
                             {
                               label: 'Buff',
@@ -3206,6 +3320,17 @@ export default function Campaign() {
                               icon: (
                                 <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
                                   <path d="M6 18 18 6m0 0h-4m4 0v4M6 18l-2 2" strokeLinecap="round" strokeLinejoin="round" />
+                                </svg>
+                              ),
+                            },
+                            {
+                              label: 'Crowns',
+                              value: crownsValue,
+                              tone: 'text-[var(--soft)]',
+                              icon: (
+                                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.6">
+                                  <path d="M4 8 8 4l4 4 4-4 4 4v8a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8Z" strokeLinecap="round" strokeLinejoin="round" />
+                                  <path d="M4 12h16" strokeLinecap="round" strokeLinejoin="round" />
                                 </svg>
                               ),
                             },

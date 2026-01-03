@@ -23,6 +23,118 @@ const buildMapFromKeys = (keys, initialValue = 0) => {
   return base;
 };
 
+const makeId = (prefix) =>
+  `${prefix}-${Math.random().toString(36).slice(2, 8)}-${Date.now().toString(36)}`;
+
+const WEAPON_KEYWORDS = [
+  { key: 'sword', damage: '1d8', weaponType: 'Melee' },
+  { key: 'dagger', damage: '1d4', weaponType: 'Melee' },
+  { key: 'axe', damage: '1d12', weaponType: 'Melee' },
+  { key: 'mace', damage: '1d6', weaponType: 'Melee' },
+  { key: 'bow', damage: '1d8', weaponType: 'Ranged' },
+  { key: 'staff', damage: '1d6', weaponType: 'Melee' },
+  { key: 'spear', damage: '1d6', weaponType: 'Melee' },
+  { key: 'hammer', damage: '1d8', weaponType: 'Melee' },
+  { key: 'club', damage: '1d6', weaponType: 'Melee' },
+  { key: 'rapier', damage: '1d8', weaponType: 'Melee' },
+  { key: 'halberd', damage: '1d10', weaponType: 'Melee' },
+  { key: 'scythe', damage: '1d10', weaponType: 'Melee' },
+];
+
+const normalizeName = (value) => String(value ?? '').trim().toLowerCase();
+
+const cleanWeaponName = (value) =>
+  String(value ?? '')
+    .replace(/^(?:have|has|had)\s+(?:a|an|the)\s+/i, '')
+    .replace(/^(?:a|an|the|my|your|his|her|their|our)\s+/i, '')
+    .replace(
+      /^(?:(?:common|uncommon|rare|epic|legendary|divine|hellforged|mythic|masterwork|ancient|cursed|blessed|fine|ornate)\s+)+/i,
+      ''
+    )
+    .replace(/[.,;:]+$/g, '')
+    .trim();
+
+const normalizeWeaponKey = (value) => normalizeName(cleanWeaponName(value));
+
+const extractBackstoryWeapons = (text) => {
+  const story = String(text ?? '');
+  if (!story.trim()) return [];
+  const results = new Map();
+  const keywordPattern = WEAPON_KEYWORDS.map((entry) => entry.key).join('|');
+  const explicit = new RegExp(
+    `([A-Z][\\w'’\\-]*(?:\\s+[A-Z][\\w'’\\-]*)*\\s+(?:${keywordPattern}))`,
+    'g'
+  );
+  const fallback = new RegExp(
+    `(\\b[\\w'’\\-]+(?:\\s+[\\w'’\\-]+){0,2}\\s+(?:${keywordPattern})\\b)`,
+    'gi'
+  );
+
+  const addMatch = (match) => {
+    const name = cleanWeaponName(match);
+    if (!name) return;
+    const lower = normalizeName(name);
+    const weaponKey = WEAPON_KEYWORDS.find((entry) => lower.includes(entry.key));
+    if (!weaponKey) return;
+    results.set(lower, {
+      name,
+      rarity: 'Unique',
+      weaponType: weaponKey.weaponType,
+      type: 'Weapon',
+      damage: weaponKey.damage,
+    });
+  };
+
+  let match;
+  while ((match = explicit.exec(story)) !== null) {
+    addMatch(match[1]);
+  }
+  if (!results.size) {
+    while ((match = fallback.exec(story)) !== null) {
+      addMatch(match[1]);
+    }
+  }
+
+  return Array.from(results.values());
+};
+
+const addBackstoryItemsToInventory = (inventory, backstory) => {
+  const weapons = extractBackstoryWeapons(backstory);
+  if (!weapons.length) return inventory;
+  const existing = new Set();
+  const equippedWeapons = (inventory.equipped?.weapons ?? []).map((item) =>
+    item?.name ? { ...item, name: cleanWeaponName(item.name) || item.name } : item
+  );
+  const nextWeapons = (inventory.sections?.weapons ?? []).map((item) =>
+    item?.name ? { ...item, name: cleanWeaponName(item.name) || item.name } : item
+  );
+
+  equippedWeapons.forEach((item) => {
+    if (item?.name) existing.add(normalizeWeaponKey(item.name));
+  });
+  nextWeapons.forEach((item) => {
+    if (item?.name) existing.add(normalizeWeaponKey(item.name));
+  });
+  weapons.forEach((weapon) => {
+    const key = normalizeWeaponKey(weapon.name);
+    if (!key || existing.has(key)) return;
+    nextWeapons.push({ id: makeId('weapon'), ...weapon });
+    existing.add(key);
+  });
+
+  return {
+    ...inventory,
+    equipped: {
+      ...inventory.equipped,
+      weapons: equippedWeapons,
+    },
+    sections: {
+      ...inventory.sections,
+      weapons: nextWeapons,
+    },
+  };
+};
+
 const ALIGNMENTS = [
   'Lawful Good',
   'Neutral Good',
@@ -561,7 +673,8 @@ export default function Create() {
     });
 
     const classKey = getClassKey(currentClassDetails.name ?? currentClassDetails.displayName ?? '');
-    const inventory = buildStartingInventory(classKey);
+    const inventoryBase = buildStartingInventory(classKey);
+    const inventory = addBackstoryItemsToInventory(inventoryBase, backstory);
     const spellbook = buildStartingSpellbook();
     const payload = {
       name: name.trim(),

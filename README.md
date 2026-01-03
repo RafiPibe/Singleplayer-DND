@@ -37,6 +37,7 @@ AI DM setup
 | **Rare**                | 140        | 14%             |
 | **Epic**                | 50         | 5%              |
 | **Legendary**           | 9          | 0.9%            |
+| **Unique (Backstory)**  | 0          | 0%              |
 | **Divine / Hellforged** | 1          | 0.1%            |
 ## Equipment Scaling (Weapons & Armor)
 
