@@ -184,7 +184,118 @@ const extractDmEntities = (text) => {
   return matches;
 };
 
-const renderMessageContent = (content) => {
+const normalizeEntityKey = (value) =>
+  String(value ?? '')
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const STOP_ENTITY_KEYS = new Set([
+  'evenin',
+  'evening',
+  'hello',
+  'hi',
+  'hey',
+  'thanks',
+  'thank',
+  'friend',
+  'welcome',
+  'cheers',
+  'sir',
+  'madam',
+  'well',
+  'ok',
+  'okay',
+  'day',
+  'night',
+  'morning',
+  'afternoon',
+  'noon',
+  'dawn',
+  'dusk',
+]);
+
+const STOP_ENTITY_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'anything',
+  'something',
+  'someone',
+  'anyone',
+  'everyone',
+  'everything',
+  'nobody',
+  'somebody',
+]);
+
+const isLikelyEntityName = (entity) => {
+  const key = normalizeEntityKey(entity);
+  if (!key || STOP_ENTITY_KEYS.has(key)) return false;
+  const words = key.split(' ').filter(Boolean);
+  return words.length >= 2;
+};
+
+const extractProperNounPhrases = (text) => {
+  if (!text) return [];
+  const regex =
+    /\b(?:[A-Z][a-z]+(?:['’][A-Za-z]+)?(?:-[A-Z][a-z]+)?)(?:\s+(?:[A-Z][a-z]+(?:['’][A-Za-z]+)?(?:-[A-Z][a-z]+)?|[IVX]{1,4}))+\b/g;
+  const matches = text.match(regex) ?? [];
+  const results = new Map();
+  matches.forEach((match) => {
+    const trimmed = match.trim();
+    if (!trimmed || !isLikelyEntityName(trimmed)) return;
+    const words = trimmed.split(/\s+/);
+    if (!words.length) return;
+    if (STOP_ENTITY_WORDS.has(words[0].toLowerCase())) return;
+    if (words.some((word) => word.length === 1)) return;
+    const key = normalizeEntityKey(trimmed);
+    if (!key || STOP_ENTITY_KEYS.has(key)) return;
+    if (!results.has(key)) results.set(key, trimmed);
+  });
+  return Array.from(results.values());
+};
+
+const highlightEntitiesInText = (content, entities) => {
+  if (!content) return [''];
+  const inferred = extractProperNounPhrases(content);
+  const normalized = Array.from(
+    new Set(
+      [...(entities ?? []), ...inferred].map((item) => String(item ?? '').trim()).filter(Boolean)
+    )
+  );
+  if (!normalized.length) return [content];
+  const pattern = normalized
+    .sort((a, b) => b.length - a.length)
+    .map((item) => escapeRegExp(item))
+    .join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(content.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`dm-entity-inline-${match.index}`} className="dm-entity">
+        {match[0]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return [content];
+  if (lastIndex < content.length) {
+    output.push(content.slice(lastIndex));
+  }
+  return output;
+};
+
+const renderMessageContent = (content, allowedEntities, allowedEntityList) => {
   if (!content) return null;
   const text = scrubToolLeaks(String(content));
   if (!text) return null;
@@ -194,20 +305,32 @@ const renderMessageContent = (content) => {
   let match;
 
   while ((match = regex.exec(text)) !== null) {
+    const entity = match[1]?.trim();
+    const shouldHighlight = entity
+      ? allowedEntities?.size
+        ? allowedEntities.has(normalizeEntityKey(entity)) || isLikelyEntityName(entity)
+        : isLikelyEntityName(entity)
+      : false;
     if (match.index > lastIndex) {
-      output.push(text.slice(lastIndex, match.index));
+      output.push(...highlightEntitiesInText(text.slice(lastIndex, match.index), allowedEntityList));
     }
     output.push(
-      <span key={`dm-entity-${match.index}`} className="dm-entity">
-        {match[1]}
-      </span>
+      shouldHighlight ? (
+        <span key={`dm-entity-${match.index}`} className="dm-entity">
+          {entity}
+        </span>
+      ) : (
+        entity
+      )
     );
     lastIndex = regex.lastIndex;
   }
 
-  if (!output.length) return text;
+  if (!output.length) {
+    return highlightEntitiesInText(text, allowedEntityList);
+  }
   if (lastIndex < text.length) {
-    output.push(text.slice(lastIndex));
+    output.push(...highlightEntitiesInText(text.slice(lastIndex), allowedEntityList));
   }
   return output;
 };
@@ -249,11 +372,11 @@ const renderPlayerMessageContent = (content, entities) => {
 };
 
 const ROLL_REQUEST_PATTERNS = [
-  /\broll\b/i,
-  /\broll a\b/i,
   /\bability check\b/i,
   /\bskill check\b/i,
   /\bsaving throw\b/i,
+  /\broll\s+(?:a\s+)?d(4|6|8|10|12|20|100)\b/i,
+  /\broll\s+\d+d(4|6|8|10|12|20|100)\b/i,
   /\b\d+d(4|6|8|10|12|20|100)\b/i,
   /\bd(4|6|8|10|12|20|100)\b/i,
 ];
@@ -277,6 +400,25 @@ const parseDiceFromText = (value) => {
   const match = String(value ?? '').match(/(\d+)d(\d+)/i);
   if (!match) return null;
   return { count: Number(match[1]), sides: Number(match[2]) };
+};
+
+const extractDiceSides = (value) => {
+  const cleaned = stripHtml(value ?? '');
+  if (!cleaned) return [];
+  const sides = new Set();
+  const regex = /(\d+)d(\d+)/gi;
+  let match;
+  while ((match = regex.exec(cleaned)) !== null) {
+    const parsed = Number(match[2]);
+    if (Number.isFinite(parsed)) sides.add(parsed);
+  }
+  const loose = cleaned.match(/\bd(4|6|8|10|12|20|100)\b/gi) ?? [];
+  loose.forEach((entry) => {
+    const parsed = Number(entry.slice(1));
+    if (Number.isFinite(parsed)) sides.add(parsed);
+  });
+  const allowed = new Set([4, 6, 8, 10, 12, 20, 100]);
+  return Array.from(sides).filter((side) => allowed.has(side));
 };
 
 const parseDcFromText = (value) => {
@@ -1607,21 +1749,6 @@ export default function Campaign() {
     () => questLog.filter((quest) => isQuestCompletedStatus(quest?.status)),
     [questLog]
   );
-  const playerEntityHighlights = useMemo(() => {
-    const names = new Set();
-    npcList.forEach((npc) => {
-      const name = String(npc?.name ?? '').trim();
-      if (name) names.add(name);
-    });
-    messages.forEach((entry) => {
-      const sender = entry?.sender ?? '';
-      const isPlayer =
-        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
-      if (isPlayer) return;
-      extractDmEntities(entry?.content ?? '').forEach((entity) => names.add(entity));
-    });
-    return Array.from(names);
-  }, [messages, npcList, campaign]);
   const classKey = useMemo(() => {
     const raw = campaign?.class_name ?? '';
     return raw.replace(/\s*\(.+\)\s*$/, '').trim();
@@ -1643,6 +1770,56 @@ export default function Campaign() {
     if (Array.isArray(stored)) return stored;
     return CLASS_SPELLBOOKS[classKey] ?? DEFAULT_SPELLBOOK;
   }, [campaign, classKey]);
+  const entityHighlightList = useMemo(() => {
+    const names = new Map();
+    const addName = (value) => {
+      const key = normalizeEntityKey(value);
+      if (!key || STOP_ENTITY_KEYS.has(key)) return;
+      if (!names.has(key)) {
+        names.set(key, String(value).trim());
+      }
+    };
+
+    if (campaign?.name) addName(campaign.name);
+    if (campaign?.current_location) {
+      addName(campaign.current_location);
+      campaign.current_location.split('|').forEach((part) => addName(part));
+    }
+    npcList.forEach((npc) => {
+      if (npc?.name) addName(npc.name);
+    });
+    questLog.forEach((quest) => {
+      if (quest?.title) addName(quest.title);
+    });
+    rumors.forEach((rumor) => {
+      if (rumor?.title) addName(rumor.title);
+    });
+    bounties.forEach((bounty) => {
+      if (bounty?.title) addName(bounty.title);
+    });
+    const inventory = normalizeInventory(inventoryData);
+    inventory.equipped.weapons.forEach((item) => {
+      if (item?.name) addName(item.name);
+    });
+    Object.values(inventory.equipped.armor).forEach((item) => {
+      if (item?.name) addName(item.name);
+    });
+    Object.values(inventory.sections).forEach((items) => {
+      (items ?? []).forEach((item) => {
+        if (item?.name) addName(item.name);
+      });
+    });
+    spellbook.forEach((category) => {
+      (category?.spells ?? []).forEach((spell) => {
+        if (spell?.name) addName(spell.name);
+      });
+    });
+    return Array.from(names.values());
+  }, [campaign, npcList, questLog, rumors, bounties, inventoryData, spellbook]);
+  const entityHighlightKeys = useMemo(
+    () => new Set(entityHighlightList.map((item) => normalizeEntityKey(item))),
+    [entityHighlightList]
+  );
   const showDiceTray = useMemo(() => {
     if (!messages.length) return false;
     for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -1668,6 +1845,20 @@ export default function Campaign() {
     }
     return null;
   }, [messages, campaign, abilities, skillsByAbility]);
+  const allowedDiceSides = useMemo(() => {
+    if (!messages.length) return null;
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const entry = messages[index];
+      const sender = entry?.sender ?? '';
+      const isPlayer =
+        sender === campaign?.name || sender === 'You' || sender === (campaign?.name ?? '');
+      if (isPlayer) continue;
+      if (!messageRequestsRoll(entry?.content ?? '')) continue;
+      const sides = extractDiceSides(entry?.content ?? '');
+      return sides.length ? sides : null;
+    }
+    return null;
+  }, [messages, campaign]);
 
   useEffect(() => {
     if (!spellbook.length) {
@@ -4053,8 +4244,12 @@ export default function Campaign() {
                     </div>
                     <p className="m-0 whitespace-pre-wrap break-words">
                       {isPlayer
-                        ? renderPlayerMessageContent(message.content, playerEntityHighlights)
-                        : renderMessageContent(message.content)}
+                        ? renderPlayerMessageContent(message.content, entityHighlightList)
+                        : renderMessageContent(
+                            message.content,
+                            entityHighlightKeys,
+                            entityHighlightList
+                          )}
                     </p>
                   </div>
                 </div>
@@ -4105,7 +4300,7 @@ export default function Campaign() {
             <div className="rounded-[20px] border border-white/10 bg-[linear-gradient(140deg,rgba(13,18,28,0.9),rgba(8,10,16,0.95))] p-6 shadow-[0_24px_60px_rgba(2,6,18,0.55)] backdrop-blur">
               <h3 className="text-lg">Dice Tray</h3>
               <div className="my-4 grid grid-cols-[repeat(auto-fit,minmax(90px,1fr))] gap-2.5">
-                {[4, 6, 8, 10, 12, 20, 100].map((sides) => (
+                {(allowedDiceSides ?? [4, 6, 8, 10, 12, 20, 100]).map((sides) => (
                   <button
                     key={sides}
                     className="rounded-xl border border-white/20 bg-white/10 p-3 font-bold text-[var(--ink)] transition hover:-translate-y-0.5"

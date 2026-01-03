@@ -45,7 +45,7 @@ const normalizeName = (value) => String(value ?? '').trim().toLowerCase();
 
 const cleanWeaponName = (value) =>
   String(value ?? '')
-    .replace(/^(?:have|has|had)\s+(?:a|an|the)\s+/i, '')
+    .replace(/^(?:have|has|had|wields?|carry|carries|brandish(?:es)?|hold(?:s|ing)?|use(?:s|d|ing)?)\s+(?:a|an|the)\s+/i, '')
     .replace(/^(?:a|an|the|my|your|his|her|their|our)\s+/i, '')
     .replace(
       /^(?:(?:common|uncommon|rare|epic|legendary|divine|hellforged|mythic|masterwork|ancient|cursed|blessed|fine|ornate)\s+)+/i,
