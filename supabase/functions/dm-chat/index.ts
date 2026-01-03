@@ -1519,6 +1519,22 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         });
       }
       next.reputation = rep;
+      const repEntries = Object.entries(rep);
+      if (repEntries.length) {
+        const npcs = ensureArray(next.npcs);
+        if (npcs.length) {
+          const nextNpcs = npcs.map((npc: any) => {
+            const name = String(npc?.name ?? "").trim();
+            if (!name) return npc;
+            const repMatch = repEntries.find(
+              ([repName]) => normalizeName(repName) === normalizeName(name)
+            );
+            if (!repMatch) return npc;
+            return { ...npc, reputation: clampNpcReputation(repMatch[1], npc.reputation ?? 0) };
+          });
+          next.npcs = nextNpcs;
+        }
+      }
     },
     adjust_xp: (args) => {
       const currentLevel = Math.max(1, asNumber(next.level, 1));
