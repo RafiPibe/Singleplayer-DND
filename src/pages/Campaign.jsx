@@ -187,11 +187,115 @@ const extractDmEntities = (text) => {
 const normalizeEntityKey = (value) =>
   String(value ?? '')
     .toLowerCase()
-    .replace(/[^a-z0-9\s'’\-]/g, '')
+    .replace(/[’']/g, '')
+    .replace(/[^a-z0-9\s-]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-const renderMessageContent = (content, allowedEntities) => {
+const STOP_ENTITY_KEYS = new Set([
+  'evenin',
+  'evening',
+  'hello',
+  'hi',
+  'hey',
+  'thanks',
+  'thank',
+  'friend',
+  'welcome',
+  'cheers',
+  'sir',
+  'madam',
+  'well',
+  'ok',
+  'okay',
+  'day',
+  'night',
+  'morning',
+  'afternoon',
+  'noon',
+  'dawn',
+  'dusk',
+]);
+
+const STOP_ENTITY_WORDS = new Set([
+  'a',
+  'an',
+  'the',
+  'anything',
+  'something',
+  'someone',
+  'anyone',
+  'everyone',
+  'everything',
+  'nobody',
+  'somebody',
+]);
+
+const isLikelyEntityName = (entity) => {
+  const key = normalizeEntityKey(entity);
+  if (!key || STOP_ENTITY_KEYS.has(key)) return false;
+  const words = key.split(' ').filter(Boolean);
+  return words.length >= 2;
+};
+
+const extractProperNounPhrases = (text) => {
+  if (!text) return [];
+  const regex =
+    /\b(?:[A-Z][a-z]+(?:['’][A-Za-z]+)?(?:-[A-Z][a-z]+)?)(?:\s+(?:[A-Z][a-z]+(?:['’][A-Za-z]+)?(?:-[A-Z][a-z]+)?|[IVX]{1,4}))+\b/g;
+  const matches = text.match(regex) ?? [];
+  const results = new Map();
+  matches.forEach((match) => {
+    const trimmed = match.trim();
+    if (!trimmed || !isLikelyEntityName(trimmed)) return;
+    const words = trimmed.split(/\s+/);
+    if (!words.length) return;
+    if (STOP_ENTITY_WORDS.has(words[0].toLowerCase())) return;
+    if (words.some((word) => word.length === 1)) return;
+    const key = normalizeEntityKey(trimmed);
+    if (!key || STOP_ENTITY_KEYS.has(key)) return;
+    if (!results.has(key)) results.set(key, trimmed);
+  });
+  return Array.from(results.values());
+};
+
+const highlightEntitiesInText = (content, entities) => {
+  if (!content) return [''];
+  const inferred = extractProperNounPhrases(content);
+  const normalized = Array.from(
+    new Set(
+      [...(entities ?? []), ...inferred].map((item) => String(item ?? '').trim()).filter(Boolean)
+    )
+  );
+  if (!normalized.length) return [content];
+  const pattern = normalized
+    .sort((a, b) => b.length - a.length)
+    .map((item) => escapeRegExp(item))
+    .join('|');
+  const regex = new RegExp(`(${pattern})`, 'gi');
+  const output = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(content)) !== null) {
+    if (match.index > lastIndex) {
+      output.push(content.slice(lastIndex, match.index));
+    }
+    output.push(
+      <span key={`dm-entity-inline-${match.index}`} className="dm-entity">
+        {match[0]}
+      </span>
+    );
+    lastIndex = regex.lastIndex;
+  }
+
+  if (!output.length) return [content];
+  if (lastIndex < content.length) {
+    output.push(content.slice(lastIndex));
+  }
+  return output;
+};
+
+const renderMessageContent = (content, allowedEntities, allowedEntityList) => {
   if (!content) return null;
   const text = scrubToolLeaks(String(content));
   if (!text) return null;
@@ -202,10 +306,13 @@ const renderMessageContent = (content, allowedEntities) => {
 
   while ((match = regex.exec(text)) !== null) {
     const entity = match[1]?.trim();
-    const shouldHighlight =
-      entity && allowedEntities?.size ? allowedEntities.has(normalizeEntityKey(entity)) : false;
+    const shouldHighlight = entity
+      ? allowedEntities?.size
+        ? allowedEntities.has(normalizeEntityKey(entity)) || isLikelyEntityName(entity)
+        : isLikelyEntityName(entity)
+      : false;
     if (match.index > lastIndex) {
-      output.push(text.slice(lastIndex, match.index));
+      output.push(...highlightEntitiesInText(text.slice(lastIndex, match.index), allowedEntityList));
     }
     output.push(
       shouldHighlight ? (
@@ -219,9 +326,11 @@ const renderMessageContent = (content, allowedEntities) => {
     lastIndex = regex.lastIndex;
   }
 
-  if (!output.length) return text;
+  if (!output.length) {
+    return highlightEntitiesInText(text, allowedEntityList);
+  }
   if (lastIndex < text.length) {
-    output.push(text.slice(lastIndex));
+    output.push(...highlightEntitiesInText(text.slice(lastIndex), allowedEntityList));
   }
   return output;
 };
@@ -1665,12 +1774,17 @@ export default function Campaign() {
     const names = new Map();
     const addName = (value) => {
       const key = normalizeEntityKey(value);
-      if (!key) return;
+      if (!key || STOP_ENTITY_KEYS.has(key)) return;
       if (!names.has(key)) {
         names.set(key, String(value).trim());
       }
     };
 
+    if (campaign?.name) addName(campaign.name);
+    if (campaign?.current_location) {
+      addName(campaign.current_location);
+      campaign.current_location.split('|').forEach((part) => addName(part));
+    }
     npcList.forEach((npc) => {
       if (npc?.name) addName(npc.name);
     });
@@ -1701,7 +1815,7 @@ export default function Campaign() {
       });
     });
     return Array.from(names.values());
-  }, [npcList, questLog, rumors, bounties, inventoryData, spellbook]);
+  }, [campaign, npcList, questLog, rumors, bounties, inventoryData, spellbook]);
   const entityHighlightKeys = useMemo(
     () => new Set(entityHighlightList.map((item) => normalizeEntityKey(item))),
     [entityHighlightList]
@@ -4131,7 +4245,11 @@ export default function Campaign() {
                     <p className="m-0 whitespace-pre-wrap break-words">
                       {isPlayer
                         ? renderPlayerMessageContent(message.content, entityHighlightList)
-                        : renderMessageContent(message.content, entityHighlightKeys)}
+                        : renderMessageContent(
+                            message.content,
+                            entityHighlightKeys,
+                            entityHighlightList
+                          )}
                     </p>
                   </div>
                 </div>
