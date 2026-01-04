@@ -738,13 +738,75 @@ const normalizeLocationParts = (location: string) => {
 
 const removePlayerFromNpcs = (campaign: any, playerName: string) => {
   const name = String(playerName ?? "").trim();
-  if (!name) return campaign;
+  const race = String(campaign?.race ?? "").trim();
+  if (!name && !race) return campaign;
   const npcs = ensureArray(campaign?.npcs);
   if (!npcs.length) return campaign;
-  const filtered = npcs.filter(
-    (npc: any) => normalizeName(npc?.name ?? "") !== normalizeName(name)
-  );
+  const filtered = npcs.filter((npc: any) => {
+    const npcKey = normalizeName(npc?.name ?? "");
+    if (!npcKey) return false; // drop nameless garbage entries
+    if (name && npcKey === normalizeName(name)) return false;
+    if (race && npcKey === normalizeName(race)) return false;
+    return true;
+  });
   return filtered.length === npcs.length ? campaign : { ...campaign, npcs: filtered };
+};
+
+// Names that should never be treated as NPC identities.
+// This helps prevent the model from adding generic races/roles as NPCs
+// when no proper name is given (e.g., "Elf", "DragonKin", "Blacksmith").
+const GENERIC_NPC_NAME_DENYLIST = new Set([
+  // Common races and species
+  "human",
+  "elf",
+  "dwarf",
+  "gnome",
+  "halfling",
+  "orc",
+  "hobgoblin",
+  "goblin",
+  "kobold",
+  "lizardfolk",
+  "tabaxi",
+  "triton",
+  "aarakocra",
+  "warforged",
+  "grung",
+  "fairy",
+  "dhampir",
+  // Custom/common variants frequently used as descriptors
+  "dragonborn",
+  "dragonkin",
+  "tiefling",
+  // Generic roles/titles
+  "man",
+  "woman",
+  "boy",
+  "girl",
+  "child",
+  "guard",
+  "soldier",
+  "merchant",
+  "blacksmith",
+  "barkeep",
+  "bartender",
+  "priest",
+  "cleric",
+  "innkeeper",
+]);
+
+// Returns true when the proposed NPC name looks like a generic descriptor
+// (race, role, or the player's own race/name) rather than a proper name.
+const isGenericNpcName = (name: string, campaign: any) => {
+  const normalized = normalizeName(name);
+  if (!normalized) return true;
+  // Don't ever add the player themselves
+  if (normalized === normalizeName(campaign?.name)) return true;
+  // Avoid adding NPC with the same string as the player's race
+  if (normalized === normalizeName(campaign?.race)) return true;
+  // Filter known generic identifiers
+  if (GENERIC_NPC_NAME_DENYLIST.has(normalized)) return true;
+  return false;
 };
 
 const ensureNpcPersistence = (nextCampaign: any, previousCampaign: any, playerName: string) => {
@@ -1684,6 +1746,8 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       const npcs = ensureArray(next.npcs);
       const rawName = sanitizeText(args.name ?? "Unknown");
       if (!rawName) return;
+      // Guard against adding generic race/role names as NPCs
+      if (isGenericNpcName(rawName, next)) return;
       const lastSeen = sanitizeText(args.lastSeen ?? next.current_location ?? "");
       const npcPatch = {
         id: makeId("npc"),
@@ -1728,6 +1792,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         patch.gender = "Male";
       }
       const matchName = args.name ? sanitizeText(args.name) : patch.name;
+      if (matchName && isGenericNpcName(matchName, next)) return;
       const matchKey = matchName ? normalizeName(matchName) : "";
       const index = args.id
         ? npcs.findIndex((npc: any) => npc.id === args.id)
@@ -2332,14 +2397,17 @@ serve(async (req) => {
       const npcLocation = updatedCampaign.current_location ?? baseLocation;
       const npcExtractionInstruction =
         "You are a tool-routing assistant. Use function calls ONLY when needed to keep NPCs in sync. " +
-        "Add an NPC when a named person appears in the DM message. " +
+        "Add an NPC only when a proper, named person appears in the DM message. " +
+        "Do NOT add entries that are just races or roles (e.g., 'Elf', 'DragonKin', 'Blacksmith'). " +
+        "Never add or update an NPC whose name equals the player's name or race. " +
         "Update an NPC when they appear again or new details (role, summary, gender, reputation, feeling) are mentioned. " +
         "Set lastSeen to the current location when the NPC appears. " +
-        "Do not add the player as an NPC. Do not add locations, factions, items, monsters, or groups as NPCs. " +
+        "Do not add locations, factions, items, monsters, or groups as NPCs. " +
         "Avoid duplicates by matching existing NPC names. If nothing should change, make no function calls.";
 
       const npcExtractionPrompt =
         `Player name: ${playerNameLabel}\n` +
+        `Player race: ${updatedCampaign.race || "Unknown"}\n` +
         `Current location: ${npcLocation}\n` +
         `DM message: ${dmText}\n` +
         `Known NPCs: ${npcNames || "none"}`;
