@@ -302,6 +302,45 @@ const normalizeInventory = (value: unknown) => {
   };
 };
 
+const applyItemRarity = (item: any) => {
+  if (!item || typeof item !== "object") return item;
+  if (item.rarity) return item;
+  const inferred = normalizeRarityName(item.name ?? item.note ?? item.description ?? "");
+  return { ...item, rarity: inferred || "Common" };
+};
+
+const ensureInventoryRarity = (value: unknown) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const base = value as Record<string, any>;
+  const sections = ensureObject(base.sections);
+  const equipped = ensureObject(base.equipped);
+  const equippedArmor = ensureObject(equipped.armor);
+  return {
+    ...base,
+    sections: {
+      ...sections,
+      weapons: ensureArray(sections.weapons).map(applyItemRarity),
+      armor: ensureArray(sections.armor).map(applyItemRarity),
+      consumables: ensureArray(sections.consumables).map(applyItemRarity),
+      misc: ensureArray(sections.misc).map(applyItemRarity),
+    },
+    equipped: {
+      ...equipped,
+      weapons: Array.isArray(equipped.weapons)
+        ? equipped.weapons.map(applyItemRarity)
+        : equipped.weapons,
+      armor: {
+        ...equippedArmor,
+        Head: applyItemRarity(equippedArmor.Head),
+        Body: applyItemRarity(equippedArmor.Body),
+        Arms: applyItemRarity(equippedArmor.Arms),
+        Leggings: applyItemRarity(equippedArmor.Leggings),
+        Cloak: applyItemRarity(equippedArmor.Cloak),
+      },
+    },
+  };
+};
+
 const updateListItem = <T extends { id?: string }>(
   list: T[],
   match: { id?: string; name?: string; title?: string },
@@ -369,6 +408,14 @@ const normalizeName = (value: unknown) => stripHtml(value).trim().toLowerCase();
 const isPibe = (value: unknown) => normalizeName(value) === "pibe";
 
 const getClassKey = (value: unknown) => String(value ?? "").replace(/\s*\(.+\)\s*$/, "").trim();
+
+const replacePlayerNamePlaceholder = (text: string, playerName: string) => {
+  const name = String(playerName ?? "").trim();
+  if (!text || !name) return text;
+  return text
+    .replace(/<\s*player[-\s]?name\s*>/gi, name)
+    .replace(/\bplayer-name\b/gi, name);
+};
 
 const getHpGainPerLevel = (className: unknown) => {
   const key = getClassKey(className);
@@ -1885,12 +1932,15 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         : "misc";
       const rawItem = { ...(args.item ?? {}) };
       const itemName = sanitizeText(rawItem.name ?? "");
+      const rawRarity = sanitizeText(rawItem.rarity ?? "");
+      const inferredRarity = normalizeRarityName(rawItem.name ?? rawItem.note ?? rawItem.description ?? "");
       const item = {
         id: makeId("item"),
         ...rawItem,
         name: itemName || rawItem.name,
         description: sanitizeText(rawItem.description ?? rawItem.note ?? ""),
         note: sanitizeText(rawItem.note ?? ""),
+        rarity: rawRarity || inferredRarity || "Common",
       };
       const nameKey = itemName ? normalizeName(itemName) : "";
       const exists = nameKey
@@ -2167,7 +2217,7 @@ serve(async (req) => {
     };
 
     const history = ensureArray(seededCampaign.messages)
-      .slice(-10)
+      .slice(-18)
       .map((entry: any) => ({
         role: entry.sender === seededCampaign.name || entry.sender === "You" ? "user" : "model",
         content: entry.content ?? "",
@@ -2184,6 +2234,8 @@ serve(async (req) => {
       "Aim for 2-4 paragraphs per reply and avoid one-liners. " +
       "Never respond under 120 words unless the player explicitly requests brevity. " +
       "Include at least one spoken line in quotes when an NPC is present if possible and fit in the story. " +
+      "Stay anchored to the current scene and recent events; continue from the latest message without jumping to unrelated plots. " +
+      "Do not introduce new major quests, NPCs, or locations unless they are clearly prompted by the player or already grounded in the current context (quests, rumors, NPCs, or location). " +
       "Never show tool calls, function names, debug text, or code in the response. " +
       "Never include JSON, code blocks, or serialized data in the response. " +
       "Do not mention UI or meta systems (quest log, rumor list, bounty board, XP totals, tool calls). " +
@@ -2208,6 +2260,7 @@ serve(async (req) => {
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
       "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
       "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
+      "Never use placeholder tokens like <player-name> or player-name; always use the player's actual name. " +
       pibeLine +
       " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state. " +
       "End with a short question about what the player does next, phrased in third person using the player's name.";
@@ -2337,6 +2390,7 @@ serve(async (req) => {
         "Create a rumor when NPCs share hearsay, reports, or local talk. " +
         "Create a quest when an NPC asks for help, the player accepts a task, or an objective is clearly offered. " +
         "When the player agrees to help with a quest, update that quest to status Active. " +
+        "Do not create quests or rumors that are unrelated to the current story context. " +
         "If a rumor becomes a concrete objective, create a quest with the same or similar title so the rumor can be cleared. " +
         "Update a quest to Completed only when the player clearly finishes it. " +
         "Avoid duplicates by matching existing titles. If nothing should change, make no function calls.";
@@ -2344,6 +2398,7 @@ serve(async (req) => {
       const extractionPrompt =
         `Player message: ${message || "(none)"}\n` +
         `DM message: ${dmText}\n` +
+        `Current location: ${updatedCampaign.current_location ?? baseLocation}\n` +
         `Existing quests: ${questTitles || "none"}\n` +
         `Existing rumors: ${rumorTitles || "none"}\n` +
         `Existing bounties: ${bountyTitles || "none"}`;
@@ -2571,6 +2626,7 @@ serve(async (req) => {
 
     updatedCampaign = removePlayerFromNpcs(updatedCampaign, campaign?.name ?? "");
     updatedCampaign = ensureNpcPersistence(updatedCampaign, campaign, campaign?.name ?? "");
+    updatedCampaign.inventory = ensureInventoryRarity(updatedCampaign.inventory);
 
     updatedCampaign = applyQuestRewards(updatedCampaign);
     {
@@ -2625,6 +2681,7 @@ serve(async (req) => {
         `You can press forward, ask for details, or change the scene entirely. What does ${playerNameLabel} do?`;
     }
 
+    dmText = replacePlayerNamePlaceholder(dmText || "", playerNameLabel);
     dmText = scrubToolLeaks(dmText || "");
     updatedCampaign.npcs = enforcePibeGender(ensureArray(updatedCampaign.npcs));
     if (isIntro && !dmText) {
