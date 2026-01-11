@@ -302,6 +302,45 @@ const normalizeInventory = (value: unknown) => {
   };
 };
 
+const applyItemRarity = (item: any) => {
+  if (!item || typeof item !== "object") return item;
+  if (item.rarity) return item;
+  const inferred = normalizeRarityName(item.name ?? item.note ?? item.description ?? "");
+  return { ...item, rarity: inferred || "Common" };
+};
+
+const ensureInventoryRarity = (value: unknown) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const base = value as Record<string, any>;
+  const sections = ensureObject(base.sections);
+  const equipped = ensureObject(base.equipped);
+  const equippedArmor = ensureObject(equipped.armor);
+  return {
+    ...base,
+    sections: {
+      ...sections,
+      weapons: ensureArray(sections.weapons).map(applyItemRarity),
+      armor: ensureArray(sections.armor).map(applyItemRarity),
+      consumables: ensureArray(sections.consumables).map(applyItemRarity),
+      misc: ensureArray(sections.misc).map(applyItemRarity),
+    },
+    equipped: {
+      ...equipped,
+      weapons: Array.isArray(equipped.weapons)
+        ? equipped.weapons.map(applyItemRarity)
+        : equipped.weapons,
+      armor: {
+        ...equippedArmor,
+        Head: applyItemRarity(equippedArmor.Head),
+        Body: applyItemRarity(equippedArmor.Body),
+        Arms: applyItemRarity(equippedArmor.Arms),
+        Leggings: applyItemRarity(equippedArmor.Leggings),
+        Cloak: applyItemRarity(equippedArmor.Cloak),
+      },
+    },
+  };
+};
+
 const updateListItem = <T extends { id?: string }>(
   list: T[],
   match: { id?: string; name?: string; title?: string },
@@ -369,6 +408,14 @@ const normalizeName = (value: unknown) => stripHtml(value).trim().toLowerCase();
 const isPibe = (value: unknown) => normalizeName(value) === "pibe";
 
 const getClassKey = (value: unknown) => String(value ?? "").replace(/\s*\(.+\)\s*$/, "").trim();
+
+const replacePlayerNamePlaceholder = (text: string, playerName: string) => {
+  const name = String(playerName ?? "").trim();
+  if (!text || !name) return text;
+  return text
+    .replace(/<\s*player[-\s]?name\s*>/gi, name)
+    .replace(/\bplayer-name\b/gi, name);
+};
 
 const getHpGainPerLevel = (className: unknown) => {
   const key = getClassKey(className);
@@ -738,13 +785,75 @@ const normalizeLocationParts = (location: string) => {
 
 const removePlayerFromNpcs = (campaign: any, playerName: string) => {
   const name = String(playerName ?? "").trim();
-  if (!name) return campaign;
+  const race = String(campaign?.race ?? "").trim();
+  if (!name && !race) return campaign;
   const npcs = ensureArray(campaign?.npcs);
   if (!npcs.length) return campaign;
-  const filtered = npcs.filter(
-    (npc: any) => normalizeName(npc?.name ?? "") !== normalizeName(name)
-  );
+  const filtered = npcs.filter((npc: any) => {
+    const npcKey = normalizeName(npc?.name ?? "");
+    if (!npcKey) return false; // drop nameless garbage entries
+    if (name && npcKey === normalizeName(name)) return false;
+    if (race && npcKey === normalizeName(race)) return false;
+    return true;
+  });
   return filtered.length === npcs.length ? campaign : { ...campaign, npcs: filtered };
+};
+
+// Names that should never be treated as NPC identities.
+// This helps prevent the model from adding generic races/roles as NPCs
+// when no proper name is given (e.g., "Elf", "DragonKin", "Blacksmith").
+const GENERIC_NPC_NAME_DENYLIST = new Set([
+  // Common races and species
+  "human",
+  "elf",
+  "dwarf",
+  "gnome",
+  "halfling",
+  "orc",
+  "hobgoblin",
+  "goblin",
+  "kobold",
+  "lizardfolk",
+  "tabaxi",
+  "triton",
+  "aarakocra",
+  "warforged",
+  "grung",
+  "fairy",
+  "dhampir",
+  // Custom/common variants frequently used as descriptors
+  "dragonborn",
+  "dragonkin",
+  "tiefling",
+  // Generic roles/titles
+  "man",
+  "woman",
+  "boy",
+  "girl",
+  "child",
+  "guard",
+  "soldier",
+  "merchant",
+  "blacksmith",
+  "barkeep",
+  "bartender",
+  "priest",
+  "cleric",
+  "innkeeper",
+]);
+
+// Returns true when the proposed NPC name looks like a generic descriptor
+// (race, role, or the player's own race/name) rather than a proper name.
+const isGenericNpcName = (name: string, campaign: any) => {
+  const normalized = normalizeName(name);
+  if (!normalized) return true;
+  // Don't ever add the player themselves
+  if (normalized === normalizeName(campaign?.name)) return true;
+  // Avoid adding NPC with the same string as the player's race
+  if (normalized === normalizeName(campaign?.race)) return true;
+  // Filter known generic identifiers
+  if (GENERIC_NPC_NAME_DENYLIST.has(normalized)) return true;
+  return false;
 };
 
 const ensureNpcPersistence = (nextCampaign: any, previousCampaign: any, playerName: string) => {
@@ -1684,6 +1793,8 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
       const npcs = ensureArray(next.npcs);
       const rawName = sanitizeText(args.name ?? "Unknown");
       if (!rawName) return;
+      // Guard against adding generic race/role names as NPCs
+      if (isGenericNpcName(rawName, next)) return;
       const lastSeen = sanitizeText(args.lastSeen ?? next.current_location ?? "");
       const npcPatch = {
         id: makeId("npc"),
@@ -1728,6 +1839,7 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         patch.gender = "Male";
       }
       const matchName = args.name ? sanitizeText(args.name) : patch.name;
+      if (matchName && isGenericNpcName(matchName, next)) return;
       const matchKey = matchName ? normalizeName(matchName) : "";
       const index = args.id
         ? npcs.findIndex((npc: any) => npc.id === args.id)
@@ -1820,12 +1932,15 @@ const applyToolCalls = (campaign: any, toolCalls: any[], lootContext?: any) => {
         : "misc";
       const rawItem = { ...(args.item ?? {}) };
       const itemName = sanitizeText(rawItem.name ?? "");
+      const rawRarity = sanitizeText(rawItem.rarity ?? "");
+      const inferredRarity = normalizeRarityName(rawItem.name ?? rawItem.note ?? rawItem.description ?? "");
       const item = {
         id: makeId("item"),
         ...rawItem,
         name: itemName || rawItem.name,
         description: sanitizeText(rawItem.description ?? rawItem.note ?? ""),
         note: sanitizeText(rawItem.note ?? ""),
+        rarity: rawRarity || inferredRarity || "Common",
       };
       const nameKey = itemName ? normalizeName(itemName) : "";
       const exists = nameKey
@@ -2102,7 +2217,7 @@ serve(async (req) => {
     };
 
     const history = ensureArray(seededCampaign.messages)
-      .slice(-10)
+      .slice(-18)
       .map((entry: any) => ({
         role: entry.sender === seededCampaign.name || entry.sender === "You" ? "user" : "model",
         content: entry.content ?? "",
@@ -2119,6 +2234,8 @@ serve(async (req) => {
       "Aim for 2-4 paragraphs per reply and avoid one-liners. " +
       "Never respond under 120 words unless the player explicitly requests brevity. " +
       "Include at least one spoken line in quotes when an NPC is present if possible and fit in the story. " +
+      "Stay anchored to the current scene and recent events; continue from the latest message without jumping to unrelated plots. " +
+      "Do not introduce new major quests, NPCs, or locations unless they are clearly prompted by the player or already grounded in the current context (quests, rumors, NPCs, or location). " +
       "Never show tool calls, function names, debug text, or code in the response. " +
       "Never include JSON, code blocks, or serialized data in the response. " +
       "Do not mention UI or meta systems (quest log, rumor list, bounty board, XP totals, tool calls). " +
@@ -2143,6 +2260,7 @@ serve(async (req) => {
       "When a rumor turns into a concrete objective, add a quest and optionally resolve the rumor. " +
       "When the player completes a quest, mark it Completed and call adjust_xp with a balanced amount. " +
       "Assign balanced XP for quests/rumors (5-50 range, scale to difficulty and importance). " +
+      "Never use placeholder tokens like <player-name> or player-name; always use the player's actual name. " +
       pibeLine +
       " Whenever the story changes quests, rumors, bounties, reputation, XP, HP, inventory, journal, NPCs, ossuary items, spells, or saving throws, call the relevant tool to update state. " +
       "End with a short question about what the player does next, phrased in third person using the player's name.";
@@ -2272,6 +2390,7 @@ serve(async (req) => {
         "Create a rumor when NPCs share hearsay, reports, or local talk. " +
         "Create a quest when an NPC asks for help, the player accepts a task, or an objective is clearly offered. " +
         "When the player agrees to help with a quest, update that quest to status Active. " +
+        "Do not create quests or rumors that are unrelated to the current story context. " +
         "If a rumor becomes a concrete objective, create a quest with the same or similar title so the rumor can be cleared. " +
         "Update a quest to Completed only when the player clearly finishes it. " +
         "Avoid duplicates by matching existing titles. If nothing should change, make no function calls.";
@@ -2279,6 +2398,7 @@ serve(async (req) => {
       const extractionPrompt =
         `Player message: ${message || "(none)"}\n` +
         `DM message: ${dmText}\n` +
+        `Current location: ${updatedCampaign.current_location ?? baseLocation}\n` +
         `Existing quests: ${questTitles || "none"}\n` +
         `Existing rumors: ${rumorTitles || "none"}\n` +
         `Existing bounties: ${bountyTitles || "none"}`;
@@ -2332,14 +2452,17 @@ serve(async (req) => {
       const npcLocation = updatedCampaign.current_location ?? baseLocation;
       const npcExtractionInstruction =
         "You are a tool-routing assistant. Use function calls ONLY when needed to keep NPCs in sync. " +
-        "Add an NPC when a named person appears in the DM message. " +
+        "Add an NPC only when a proper, named person appears in the DM message. " +
+        "Do NOT add entries that are just races or roles (e.g., 'Elf', 'DragonKin', 'Blacksmith'). " +
+        "Never add or update an NPC whose name equals the player's name or race. " +
         "Update an NPC when they appear again or new details (role, summary, gender, reputation, feeling) are mentioned. " +
         "Set lastSeen to the current location when the NPC appears. " +
-        "Do not add the player as an NPC. Do not add locations, factions, items, monsters, or groups as NPCs. " +
+        "Do not add locations, factions, items, monsters, or groups as NPCs. " +
         "Avoid duplicates by matching existing NPC names. If nothing should change, make no function calls.";
 
       const npcExtractionPrompt =
         `Player name: ${playerNameLabel}\n` +
+        `Player race: ${updatedCampaign.race || "Unknown"}\n` +
         `Current location: ${npcLocation}\n` +
         `DM message: ${dmText}\n` +
         `Known NPCs: ${npcNames || "none"}`;
@@ -2503,6 +2626,7 @@ serve(async (req) => {
 
     updatedCampaign = removePlayerFromNpcs(updatedCampaign, campaign?.name ?? "");
     updatedCampaign = ensureNpcPersistence(updatedCampaign, campaign, campaign?.name ?? "");
+    updatedCampaign.inventory = ensureInventoryRarity(updatedCampaign.inventory);
 
     updatedCampaign = applyQuestRewards(updatedCampaign);
     {
@@ -2557,6 +2681,7 @@ serve(async (req) => {
         `You can press forward, ask for details, or change the scene entirely. What does ${playerNameLabel} do?`;
     }
 
+    dmText = replacePlayerNamePlaceholder(dmText || "", playerNameLabel);
     dmText = scrubToolLeaks(dmText || "");
     updatedCampaign.npcs = enforcePibeGender(ensureArray(updatedCampaign.npcs));
     if (isIntro && !dmText) {

@@ -1,33 +1,104 @@
 # Singleplayer DnD Campaign (WIP)
 
-(Built with React + Supabase)
+Single-player, story-driven DnD campaigns with a Gemini-powered Dungeon Master, Supabase storage, and a fully editable admin console.
 
-Setup
-- Install dependencies: npm install
-- Copy env: cp .env.example .env and fill in VITE_SUPABASE_URL + VITE_SUPABASE_ANON_KEY
-- Create the table: run the SQL in supabase.sql in your Supabase SQL editor
-- Start dev server: npm run dev
+## Features
+- Campaign creation wizard with races, classes, stats, backstory, and starting gear.
+- AI Dungeon Master via Supabase Edge Functions (Gemini API).
+- Campaign UI with quests, rumors, bounties, NPCs, inventory, journal, spellbook, and dice tools.
+- Leaderboard on the home page.
+- Admin console to edit campaigns and game data (classes, races, abilities, loot tables).
+- Optional background music from Supabase Storage.
 
-Pages
-- /: homepage with UID access
-- /create: character creation wizard
-- /campaign/:id: campaign view + dice tray (accepts UID or UUID)
-- /admin: admin console (Supabase auth + admin email allowlist)
+## Tech stack
+- Vite + React
+- Tailwind CSS
+- Supabase (Postgres, Auth, Storage, Edge Functions)
+- Gemini API
 
-Admin setup
-- Run the latest SQL in supabase.sql to create admin_emails and game_data tables.
-- Add your admin email in Supabase:
-  insert into public.admin_emails (email) values ('you@example.com');
+## Setup
+1) Install dependencies
+```
+npm install
+```
 
-AI DM setup
-- Deploy the edge function in `supabase/functions/dm-chat`.
-- Deploy through cli if there is any changes towards the dm chat by doing `supabase functions deploy dm-chat --no-verify-jwt` in supabase CLI
+2) Create Supabase tables and policies
+- Create a Supabase project.
+- Run `supabase.sql` in the Supabase SQL editor.
+- This creates `campaigns`, `admin_emails`, and `game_data` plus RLS policies.
+
+3) Connect Google AI Studio
+
+4) Configure environment
+```
+cp .env.example .env
+```
+Fill:
+- `VITE_SUPABASE_URL`
+- `VITE_SUPABASE_ANON_KEY`
+
+(local Edge Functions or custom tooling):
+- `SUPABASE_URL`
+- `SERVICE_ROLE_KEY`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL` (defaults to `gemini-2.0-flash`)
+
+5) Start dev server
+```
+npm run dev
+```
+
+## Security note
+- `supabase.sql` currently allows public read/write on `campaigns` and public read on `game_data`.
+- The `dm-chat` Edge Function runs with `verify_jwt = false` by default.
+- Lock these down before production if you need authenticated or private data access.
+
+## Usage
+- `/` Home. Enter a campaign UID to continue or create a new campaign.
+- `/create` Character creation wizard.
+- `/campaign/:id` Campaign view (accepts `access_key` UID or UUID).
+- `/admin` Admin console (Supabase Auth + allow list).
+
+## Admin setup
+- Add your email to the allow list:
+```
+insert into public.admin_emails (email) values ('you@example.com');
+```
+- Enable email auth in Supabase.
+- Sign in at `/admin` using password or magic link.
+
+The admin console can:
+- Edit campaign data directly.
+- Override `classes`, `races`, `abilities`, `skills_by_ability`, and `loot_config` via the `game_data` table.
+- When no rows exist in `game_data`, the app falls back to `src/data/*`.
+
+## AI DM setup (Edge Function)
+- Deploy the edge function in `supabase/functions/dm-chat`:
+```
+supabase functions deploy dm-chat --no-verify-jwt
+```
+- Deploy through CLI if there is any changes towards the dm chat by doing below in supabase CLI
+```
+supabase functions deploy dm-chat --no-verify-jwt
+```
 - Set these function secrets in Supabase:
   - GEMINI_API_KEY (from Google AI Studio)
   - SERVICE_ROLE_KEY (service_role key from Supabase)
   - Optional: GEMINI_MODEL (defaults to gemini-2.0-flash)
-- Note: Supabase provides `SUPABASE_URL` automatically inside Edge Functions.
-- The `dm-chat` function is configured with `verify_jwt = false` to allow UID-only access.
+
+Notes:
+- Supabase injects `SUPABASE_URL` automatically inside Edge Functions.
+- `dm-chat` is configured with `verify_jwt = false` to allow UID-only access. Adjust if you want authenticated access only.
+
+## Optional: music storage
+- Create a public bucket named `dnd-bucket`.
+- Upload audio files under `music/` (e.g. `music/TavernMusic.mp3`).
+- The campaign page auto-loads tracks from that folder and falls back to `music/TavernMusic.mp3`.
+
+## Scripts
+- `npm run dev` Run Vite dev server
+- `npm run build` Production build
+- `npm run preview` Preview build locally
 
 ## Item & Drops Rarity distribution and stats
 | **Rarity**              | **Weight** | **Probability** |
@@ -39,6 +110,7 @@ AI DM setup
 | **Legendary**           | 9          | 0.9%            |
 | **Unique (Backstory)**  | 0          | 0%              |
 | **Divine / Hellforged** | 1          | 0.1%            |
+
 ## Equipment Scaling (Weapons & Armor)
 
 | **Rarity**        | **Weapon Bonus (Damage increase)** | **Damage Die Scaling** | **Armor Class (AC)** |
@@ -49,6 +121,7 @@ AI DM setup
 | **Epic**          | +2                                 | +1d8                   | +2 AC                |
 | **Legendary**     | +3                                 | **Double** Base Die    | +3 AC                |
 | **Divine / Hell** | +3                                 | **Double** Die + 2d10  | +4 AC                |
+
 ## Potion Potency & Minimum Rarities
 | **Rarity**      | **HP Recovery** | **XP Granted** | **Skill XP (Training)** | **Duration** |
 | --------------- | --------------- | -------------- | ----------------------- | ------------ |
@@ -58,6 +131,7 @@ AI DM setup
 | **Epic**        | 10d4 + 20       | **2 XP**       | +2 Skill Points         | Instant      |
 | **Legendary**   | Full Heal       | **5 XP**       | +5 Skill Points         | Instant      |
 | **Divine/Hell** | Full + 25 Temp  | **10 XP**      | Instant Mastery         | Instant      |
+
 ## Ability & Skill Potions (Buffs)
 | **Rarity**      | **Ability Check Buff** | **Skill Performance** | **Duration**     |
 | --------------- | ---------------------- | --------------------- | ---------------- |
